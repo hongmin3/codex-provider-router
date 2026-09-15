@@ -1,0 +1,18 @@
+{
+  "domain": "default",
+  "knowledge": [
+    {
+      "path": "knowledge",
+      "namespace": "REF",
+      "untagged": "derive"
+    }
+  ],
+  "learnings": "akela/LEARNINGS.md",
+  "runs": ".akela/runs",
+  "compiler": {},
+  "activities": [
+    "develop",
+    "test",
+    "operate"
+  ]
+}

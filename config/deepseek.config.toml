@@ -1,0 +1,16 @@
+model = "deepseek-flash"
+model_provider = "deepseek"
+model_catalog_json = "~/.codex/router/deepseek-models.json"
+model_reasoning_effort = "high"
+model_reasoning_summary = "none"
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com"
+env_key = "DEEPSEEK_API_KEY"
+env_key_instructions = "Run: codex-router key set"
+wire_api = "responses"
+request_max_retries = 2
+stream_max_retries = 2
+stream_idle_timeout_ms = 300000
+supports_websockets = false

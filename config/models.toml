@@ -1,0 +1,55 @@
+[metadata]
+updated_at = "2026-09-14"
+price_unit = "USD per 1M tokens"
+
+[models.gpt_luna]
+display_name = "GPT-5.6 Luna"
+model_id = "gpt-5.6-luna"
+provider = "openai"
+supported_reasoning_levels = ["low", "medium", "high", "xhigh", "max"]
+context_window = 1050000
+input_price = 0.20
+cached_input_price = 0.02
+output_price = 1.20
+enabled = true
+priority = 20
+capabilities = ["coding", "shell", "python", "automation", "debugging"]
+
+[models.deepseek_flash]
+display_name = "DeepSeek V4 Flash"
+model_id = "deepseek-flash"
+provider = "deepseek"
+supported_reasoning_levels = ["low", "high", "max"]
+context_window = 1048576
+input_price = 0.14
+cached_input_price = 0.0028
+output_price = 0.28
+enabled = true
+priority = 10
+capabilities = ["coding", "bulk", "deterministic", "transformation", "tool_calling"]
+
+[models.deepseek_pro]
+display_name = "DeepSeek V4 Pro"
+model_id = "deepseek-v4-pro"
+provider = "deepseek"
+supported_reasoning_levels = ["low", "high", "max"]
+context_window = 1048576
+input_price = 0.435
+cached_input_price = 0.003625
+output_price = 0.87
+enabled = true
+priority = 30
+capabilities = ["coding", "repository", "multi_file", "architecture", "debugging", "tool_calling"]
+
+[models.gpt_sol]
+display_name = "GPT-5.6 Sol"
+model_id = "gpt-5.6-sol"
+provider = "openai"
+supported_reasoning_levels = ["low", "medium", "high", "xhigh", "max"]
+context_window = 1050000
+input_price = 4.0
+cached_input_price = 0.40
+output_price = 20.0
+enabled = true
+priority = 40
+capabilities = ["coding", "repository", "multi_file", "architecture", "high_risk", "agentic", "tool_calling"]

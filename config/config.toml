@@ -1,0 +1,34 @@
+[primary]
+provider = "openai"
+
+[fallback]
+provider = "deepseek"
+model = "deepseek-flash"
+reasoning_effort = "high"
+
+[routing]
+auto_fallback = true
+auto_return = true
+probe_minutes = [10, 20, 30, 60]
+max_fallback_minutes = 480
+catalog_check_hours = 24
+
+[cost]
+daily_limit_usd = 25.0
+monthly_limit_usd = 100.0
+
+[model_router]
+recommendation = true
+auto_model_switch = false
+auto_provider_failover = false
+auto_escalation = false
+
+[classifier]
+# 기본 OFF: 일반 라우팅은 local heuristic만 사용하므로 추가 LLM token은 0입니다.
+enabled = false
+confidence_threshold = 0.70
+max_output_tokens = 150
+
+[provider_cache]
+ttl_minutes = 15
+rate_limit_minutes = 5
