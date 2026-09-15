@@ -105,14 +105,17 @@ class ModelRouterTests(unittest.TestCase):
 
     def test_tc17_runtime_arguments_do_not_mutate_global_config(self):
         config_path = pathlib.Path.home() / ".codex" / "config.toml"
-        before = config_path.read_bytes()
+        before = config_path.read_bytes() if config_path.exists() else None
         model = self.models["gpt_luna"]
         router_spec = importlib.util.spec_from_file_location("codex_router_for_test", ROOT / "src" / "codex_router.py")
         router = importlib.util.module_from_spec(router_spec)
         router_spec.loader.exec_module(router)
         argv, _ = router.selected_model_args(model, "low", "테스트")
         self.assertIn("--model", argv)
-        self.assertEqual(config_path.read_bytes(), before)
+        if before is None:
+            self.assertFalse(config_path.exists())
+        else:
+            self.assertEqual(config_path.read_bytes(), before)
 
     def test_tc18_korean_multiline_prompt(self):
         decision = self.route("이 프로젝트 전체를 분석해줘.\n여러 파일의 의존성을 확인하고 테스트해줘.")
