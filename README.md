@@ -1,6 +1,68 @@
 # Codex Provider Router
 
-ChatGPT 로그인 Codex를 Primary로 유지하고 usage limit 때 DeepSeek Responses API로 전환하는 macOS wrapper입니다. 평소에는 기존처럼 `codex --yolo`를 사용합니다.
+ChatGPT 로그인 Codex를 Primary로 유지하고 필요할 때 DeepSeek Responses API를 사용하는 Codex wrapper입니다. macOS에서는 usage limit 자동 failover와 강제 전환을 지원하고, Windows에서는 요청한 `FORCE_DEEPSEEK` 강제 전환을 지원합니다. 평소에는 기존처럼 `codex --yolo`를 사용합니다.
+
+## Windows에 설치하기
+
+요구사항은 Windows 10/11, Windows PowerShell 5.1 이상, Git, 그리고 미리 설치·로그인한 Codex CLI입니다. [DeepSeek도 Codex의 Windows PowerShell 설정과 Responses API를 공식 지원](https://api-docs.deepseek.com/quick_start/agent_integrations/codex/) 합니다.
+
+DeepSeek API Key 한 줄만 들어 있는 txt 파일을 준비한 뒤 PowerShell에서 실행합니다.
+
+```powershell
+git clone https://github.com/hongmin3/codex-provider-router.git
+cd codex-provider-router
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -KeyFile "C:\secure\deepseek-api-key.txt"
+```
+
+저장소 루트에 `deepseek-api-key.txt`를 두면 `-KeyFile`을 생략해도 자동으로 가져옵니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
+
+Installer는 Key를 `%LOCALAPPDATA%\CodexProviderRouter\deepseek-api-key.dpapi`에 Windows DPAPI로 암호화해 저장합니다. 암호화된 Key는 현재 Windows 사용자 계정에서만 복호화할 수 있고, 평문 Key는 Router 설정·로그·Git에 복사되지 않습니다. 원본 txt는 Installer가 자동 삭제하지 않습니다.
+
+새 PowerShell 창을 열고 설치 상태를 확인합니다. `test deepseek`는 소량의 API를 실제 호출합니다.
+
+```powershell
+codex-router doctor
+codex-router test deepseek
+```
+
+### Windows에서 DeepSeek로 실행하기
+
+요청한 환경변수 방식은 PowerShell에서 다음과 같습니다. Codex를 종료한 뒤 `finally`가 환경변수를 제거하여 다음 실행은 다시 OpenAI를 사용합니다.
+
+```powershell
+$env:FORCE_DEEPSEEK = "1"
+try { codex --yolo } finally { Remove-Item Env:FORCE_DEEPSEEK -ErrorAction SilentlyContinue }
+```
+
+Windows에서 Git Bash를 사용하면 macOS와 완전히 같은 명령을 쓸 수 있습니다.
+
+```bash
+FORCE_DEEPSEEK=1 codex --yolo
+```
+
+더 간단한 Windows 전용 명령도 제공합니다. 이 명령은 환경변수를 남기지 않습니다.
+
+```powershell
+codex-router deepseek --yolo
+```
+
+프롬프트를 바로 전달하려면:
+
+```powershell
+codex-router deepseek --yolo "이 프로젝트의 테스트를 실행하고 실패 원인을 수정해줘"
+```
+
+기본 OpenAI/ChatGPT 로그인 Codex를 사용할 때는 그대로 실행합니다.
+
+```powershell
+codex --yolo
+```
+
+Windows wrapper는 원본 Codex 경로를 별도 보존하고 `FORCE_DEEPSEEK=1`일 때만 `deepseek-flash + high`를 주입합니다. 현재 Windows에서는 강제 전환만 지원하며, macOS wrapper의 TTY usage-limit 자동 감지·`resume --last` failover는 적용되지 않습니다.
 
 ## 새 Mac에 동일하게 설치하기
 

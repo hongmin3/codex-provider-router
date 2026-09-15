@@ -1,6 +1,7 @@
 .akela/
 akela/.cache/
 /deepseek-api-key.txt
+/deepseek-api-key.dpapi
 /.secrets/
 __pycache__/
 *.py[cod]
