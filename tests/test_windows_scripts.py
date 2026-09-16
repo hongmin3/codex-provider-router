@@ -33,8 +33,41 @@ class WindowsScriptTests(unittest.TestCase):
         self.assertIn("if (-not $ForceDeepSeek)", self.router)
         self.assertIn("& $RealCodex @Arguments", self.router)
 
+    def test_installer_decodes_the_downloaded_setup_script(self):
+        # Windows PowerShell 5.1 returns Invoke-WebRequest's .Content as a Byte[] when the
+        # server sends a non-text Content-Type, and the DeepSeek CDN sends
+        # application/octet-stream. Matching a regex against that Byte[] does not raise; it
+        # stringifies to "35 33 47 ..." and misses, so the installer aborts claiming the
+        # official catalog is unparseable. Keep the decode, not just the memory of it.
+        self.assertIn("[byte[]]", self.installer)
+        self.assertIn("[System.Text.Encoding]::UTF8.GetString(", self.installer)
+        self.assertNotIn(
+            "(Invoke-WebRequest -UseBasicParsing -Uri $SetupUrl).Content", self.installer
+        )
+
+    def test_deep_shortcut_forces_deepseek_without_an_environment_variable(self):
+        # PowerShell has no `VAR=1 command` prefix syntax, so the documented
+        # `FORCE_DEEPSEEK=1 codex --yolo` is a parse error there. `deep` is the shell-agnostic
+        # entry point: a .cmd shim resolves from PowerShell and cmd.exe alike.
+        deep = (SCRIPTS / "deep.cmd").read_text(encoding="utf-8")
+        self.assertIn('"%~dp0..\\codex-router.ps1" deep %*', deep)
+        self.assertIn("'deep' {", self.router)
+        self.assertIn("Remove-LeadingCodexToken $Remaining", self.router)
+        self.assertIn("-ForceDeepSeek $true", self.router)
+        self.assertIn("codex-router {deep|deepseek", self.router)
+
+    def test_deep_accepts_an_optional_leading_codex_token(self):
+        # `deep codex --yolo` reads like `sudo`, so the leading `codex` must be dropped rather
+        # than forwarded as a positional argument to the real Codex CLI.
+        self.assertIn("function Remove-LeadingCodexToken", self.router)
+        self.assertIn("$Arguments[0] -eq 'codex'", self.router)
+        self.assertIn("Select-Object -Skip 1", self.router)
+
+    def test_installer_deploys_the_deep_shim(self):
+        self.assertIn("'deep.cmd') -Destination (Join-Path $BinDir 'deep.cmd')", self.installer)
+
     def test_cmd_shims_do_not_contain_secrets(self):
-        for name in ("codex.cmd", "codex-router.cmd"):
+        for name in ("codex.cmd", "codex-router.cmd", "deep.cmd"):
             content = (SCRIPTS / name).read_text(encoding="utf-8")
             self.assertIn("ExecutionPolicy Bypass", content)
             self.assertNotIn("DEEPSEEK_API_KEY", content)

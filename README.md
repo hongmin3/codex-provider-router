@@ -1,6 +1,6 @@
 # Codex Provider Router
 
-ChatGPT 로그인 Codex를 Primary로 유지하고 필요할 때 DeepSeek Responses API를 사용하는 Codex wrapper입니다. macOS에서는 usage limit 자동 failover와 강제 전환을 지원하고, Windows에서는 요청한 `FORCE_DEEPSEEK` 강제 전환을 지원합니다. 평소에는 기존처럼 `codex --yolo`를 사용합니다.
+ChatGPT 로그인 Codex를 Primary로 유지하고 필요할 때 DeepSeek Responses API를 사용하는 Codex wrapper입니다. macOS에서는 usage limit 자동 failover와 강제 전환을 지원하고, Windows에서는 `deep` 명령(또는 `FORCE_DEEPSEEK`) 강제 전환을 지원합니다. 평소에는 기존처럼 `codex --yolo`를 사용합니다.
 
 ## Windows에 설치하기
 
@@ -31,7 +31,25 @@ codex-router test deepseek
 
 ### Windows에서 DeepSeek로 실행하기
 
-요청한 환경변수 방식은 PowerShell에서 다음과 같습니다. Codex를 종료한 뒤 `finally`가 환경변수를 제거하여 다음 실행은 다시 OpenAI를 사용합니다.
+가장 짧은 방법은 `deep`입니다. PowerShell과 `cmd.exe` 양쪽에서 동작하고, 환경변수를 남기지 않으며, 해당 실행 한 번에만 DeepSeek를 강제합니다.
+
+```powershell
+deep --yolo
+```
+
+`sudo`처럼 앞에 붙여 쓰는 형태도 같은 결과입니다. 맨 앞의 `codex` 토큰은 제거되고 나머지 인자만 전달됩니다.
+
+```powershell
+deep codex --yolo
+```
+
+프롬프트를 바로 전달할 수도 있습니다.
+
+```powershell
+deep codex --yolo "이 프로젝트의 테스트를 실행하고 실패 원인을 수정해줘"
+```
+
+> **`FORCE_DEEPSEEK=1 codex --yolo`는 PowerShell에서 동작하지 않습니다.** `VAR=1 command` 형태의 앞붙임 환경변수는 POSIX shell 문법이며, PowerShell은 이를 명령 이름으로 해석해 `CommandNotFoundException`을 냅니다. PowerShell에서 환경변수 방식을 쓰려면 다음과 같이 분리해야 합니다. Codex를 종료한 뒤 `finally`가 환경변수를 제거하여 다음 실행은 다시 OpenAI를 사용합니다.
 
 ```powershell
 $env:FORCE_DEEPSEEK = "1"
@@ -44,7 +62,7 @@ Windows에서 Git Bash를 사용하면 macOS와 완전히 같은 명령을 쓸 �
 FORCE_DEEPSEEK=1 codex --yolo
 ```
 
-더 간단한 Windows 전용 명령도 제공합니다. 이 명령은 환경변수를 남기지 않습니다.
+`deep`은 `codex-router deepseek`의 짧은 별칭입니다. 아래 형태도 그대로 사용할 수 있습니다.
 
 ```powershell
 codex-router deepseek --yolo

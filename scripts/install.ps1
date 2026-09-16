@@ -10,6 +10,14 @@ if ($env:OS -ne 'Windows_NT') {
     throw 'This installer must be run in Windows PowerShell or PowerShell on Windows.'
 }
 
+# Windows PowerShell 5.1 renders a progress bar for every Invoke-WebRequest read, which turns a
+# small download into a multi-second one, and it does not enable TLS 1.2 by default on every host.
+$ProgressPreference = 'SilentlyContinue'
+if (([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls12) -eq 0) {
+    [Net.ServicePointManager]::SecurityProtocol =
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 $InstallDir = Join-Path $env:LOCALAPPDATA 'CodexProviderRouter'
 $BinDir = Join-Path $InstallDir 'bin'
@@ -25,6 +33,27 @@ function Write-Utf8NoBom {
     param([string]$Path, [string]$Value)
     $Encoding = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $Value, $Encoding)
+}
+
+function Get-RemoteText {
+    param([string]$Uri)
+    # Windows PowerShell 5.1 hands back Invoke-WebRequest's .Content as a Byte[] whenever the
+    # server does not advertise a text Content-Type, and this CDN sends application/octet-stream.
+    # PowerShell 7 always hands back a String. Passing the Byte[] straight to a regex does not
+    # fail loudly: PowerShell stringifies it to "35 33 47 ..." and every match silently misses.
+    # Normalise here so no caller has to remember the difference.
+    $Response = Invoke-WebRequest -UseBasicParsing -Uri $Uri
+    $Content = $Response.Content
+    if ($Content -is [byte[]]) {
+        $Content = [System.Text.Encoding]::UTF8.GetString($Content)
+    }
+    if ($Content -isnot [string]) {
+        throw ("Unexpected response body from {0}: {1}" -f $Uri, $Content.GetType().FullName)
+    }
+    if ($Content.Length -lt 1024) {
+        throw ("Download from {0} returned only {1} characters; expected the full setup script. A proxy or captive portal may have replaced the response." -f $Uri, $Content.Length)
+    }
+    return $Content
 }
 
 function Find-RealCodex {
@@ -100,17 +129,29 @@ foreach ($Target in $BackupTargets) {
 }
 
 $SetupUrl = 'https://cdn.deepseek.com/api-docs/codex-deepseek-setup-en.sh'
-$SetupContent = (Invoke-WebRequest -UseBasicParsing -Uri $SetupUrl).Content
+$SetupContent = Get-RemoteText -Uri $SetupUrl
 $CatalogMatch = [regex]::Match(
     $SetupContent,
     "(?ms)<<'CODEX_MODELS_JSON'\s*\r?\n(?<json>.*?)\r?\nCODEX_MODELS_JSON\s*$"
 )
 if (-not $CatalogMatch.Success) {
-    throw 'The official DeepSeek model catalog could not be parsed.'
+    # Say which of the two causes it was: the block moved, or the whole script is not what we think.
+    $Detail = if ($SetupContent -match 'CODEX_MODELS_JSON') {
+        'the CODEX_MODELS_JSON marker is present but its block no longer matches the expected heredoc shape'
+    }
+    else {
+        'the CODEX_MODELS_JSON marker is absent, so the upstream setup script changed'
+    }
+    throw ("The official DeepSeek model catalog could not be parsed from {0} ({1} characters downloaded; {2})." -f $SetupUrl, $SetupContent.Length, $Detail)
 }
 $CatalogJson = $CatalogMatch.Groups['json'].Value
 $Catalog = $CatalogJson | ConvertFrom-Json
-if (-not $Catalog.models -or $Catalog.models.Count -lt 1) {
+# Set-StrictMode turns a renamed field into an opaque "property not found" error, so probe first.
+$CatalogModels = @()
+if ($Catalog.PSObject.Properties['models']) {
+    $CatalogModels = @($Catalog.models)
+}
+if ($CatalogModels.Count -lt 1) {
     throw 'The official DeepSeek model catalog contains no models.'
 }
 
@@ -119,6 +160,7 @@ Copy-Item -LiteralPath (Join-Path $ProjectDir 'config\deepseek.config.toml') -De
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex-router.ps1') -Destination (Join-Path $InstallDir 'codex-router.ps1') -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex.cmd') -Destination (Join-Path $BinDir 'codex.cmd') -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex-router.cmd') -Destination (Join-Path $BinDir 'codex-router.cmd') -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'deep.cmd') -Destination (Join-Path $BinDir 'deep.cmd') -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'uninstall.ps1') -Destination (Join-Path $InstallDir 'uninstall.ps1') -Force
 Write-Utf8NoBom -Path $RealCodexPathFile -Value ($RealCodex + [Environment]::NewLine)
 
@@ -144,4 +186,5 @@ if ($ImportedKeyPath) {
 else {
     Write-Host 'DeepSeek key was not provided. Run: codex-router key set'
 }
+Write-Host 'Force DeepSeek for one run with: deep --yolo   (or: deep codex --yolo)'
 Write-Host 'Open a new PowerShell window, then run: codex-router doctor'

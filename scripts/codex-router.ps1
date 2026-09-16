@@ -107,6 +107,17 @@ function Remove-ProviderOverrides {
     return $Filtered.ToArray()
 }
 
+function Remove-LeadingCodexToken {
+    # `deep` reads as a prefix, like `sudo`, so both `deep --yolo` and `deep codex --yolo`
+    # are natural to type. Codex has no subcommand called `codex`, so dropping a leading one
+    # can never swallow a real argument.
+    param([string[]]$Arguments)
+    if ($Arguments.Count -ge 1 -and $Arguments[0] -eq 'codex') {
+        return @($Arguments | Select-Object -Skip 1)
+    }
+    return $Arguments
+}
+
 function Invoke-RoutedCodex {
     param([string[]]$Arguments, [bool]$ForceDeepSeek)
     $RealCodex = Get-RealCodex
@@ -170,7 +181,7 @@ function Show-Doctor {
 }
 
 if (-not $RouterArgs -or $RouterArgs.Count -eq 0) {
-    [Console]::Error.WriteLine('Usage: codex-router {deepseek [CODEX_ARGS]|doctor|key set|key import PATH|test deepseek|uninstall}')
+    [Console]::Error.WriteLine('Usage: codex-router {deep|deepseek [CODEX_ARGS]|doctor|key set|key import PATH|test deepseek|uninstall}')
     exit 2
 }
 
@@ -205,11 +216,15 @@ switch ($Command) {
         Invoke-RoutedCodex -Arguments $Remaining -ForceDeepSeek $true
         exit $script:RoutedExitCode
     }
+    'deep' {
+        Invoke-RoutedCodex -Arguments (Remove-LeadingCodexToken $Remaining) -ForceDeepSeek $true
+        exit $script:RoutedExitCode
+    }
     'uninstall' {
         & (Join-Path $InstallDir 'uninstall.ps1')
         exit $LASTEXITCODE
     }
 }
 
-[Console]::Error.WriteLine('Usage: codex-router {deepseek [CODEX_ARGS]|doctor|key set|key import PATH|test deepseek|uninstall}')
+[Console]::Error.WriteLine('Usage: codex-router {deep|deepseek [CODEX_ARGS]|doctor|key set|key import PATH|test deepseek|uninstall}')
 exit 2
