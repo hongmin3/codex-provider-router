@@ -75,6 +75,18 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(args[:4], ["--profile", "deepseek", "--model", "deepseek-flash"])
         self.assertIn("--yolo", args)
 
+    def test_deep_shortcut_accepts_an_optional_leading_codex_word(self):
+        self.assertEqual(router.remove_leading_codex_token(["codex", "--yolo", "작업"]),
+                         ["--yolo", "작업"])
+        self.assertEqual(router.remove_leading_codex_token(["--yolo"]), ["--yolo"])
+        self.assertEqual(router.remove_leading_codex_token([]), [])
+
+    def test_deepseek_shortcut_without_key_exits_before_starting_codex(self):
+        with mock.patch.object(router, "keychain_key", return_value=None), \
+                mock.patch.object(router, "subprocess") as proc:
+            self.assertEqual(router.run_codex_deepseek(["--yolo"]), 78)
+            proc.call.assert_not_called()
+
     def test_staged_backoff(self):
         self.assertEqual(router.config()["routing"]["probe_minutes"], [10, 20, 30, 60])
 

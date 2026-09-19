@@ -112,6 +112,12 @@ if [[ -n "$key_value" ]]; then
 fi
 ln -sfn "$router_dir/codex_router.py" "$bin_dir/codex"
 ln -sfn "$router_dir/codex_router.py" "$bin_dir/codex-router"
+if [[ ! -e "$bin_dir/deep" || ( -L "$bin_dir/deep" && "$(readlink "$bin_dir/deep")" == "$router_dir/codex_router.py" ) ]]; then
+  ln -sfn "$router_dir/codex_router.py" "$bin_dir/deep"
+else
+  print -u2 "Not replacing existing command: $bin_dir/deep"
+  exit 1
+fi
 if [[ ! -e "$bin_dir/ai" || ( -L "$bin_dir/ai" && "$(readlink "$bin_dir/ai")" == "$router_dir/codex_router.py" ) ]]; then
   ln -sfn "$router_dir/codex_router.py" "$bin_dir/ai"
 else

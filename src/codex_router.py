@@ -338,6 +338,40 @@ def deepseek_args(args: list[str], resume: bool = False) -> list[str]:
             "-c", f'model_reasoning_effort="{reasoning_effort()}"', *filtered]
 
 
+def remove_leading_codex_token(args: list[str]) -> list[str]:
+    """`deep` reads as a prefix, like `sudo`, so drop a leading `codex`.
+
+    Codex has no subcommand called `codex`, so removing one can never swallow a real
+    argument, and `deep codex --yolo` stays identical to `deep --yolo` on both platforms.
+    """
+    if args and args[0] == "codex":
+        return list(args[1:])
+    return list(args)
+
+
+def run_codex_deepseek(args: list[str]) -> int:
+    """Start Codex on DeepSeek without waiting for an OpenAI usage limit.
+
+    `deep codex --yolo` (the `deep` command) and `codex-router deepseek --yolo`
+    both come here. A non-interactive `deep exec ...` keeps the DeepSeek profile
+    instead of falling back to the plain Codex binary, because the bypass branch in
+    `run_codex` would otherwise drop the forced provider.
+    """
+    ensure_dirs()
+    args = remove_leading_codex_token(args)
+    key = keychain_key()
+    if not key:
+        print("[Codex Router] DeepSeek key missing. Run: codex-router key set", file=sys.stderr)
+        log("failure", provider="deepseek", failure_type="missing_key")
+        return 78
+    if not sys.stdin.isatty():
+        env = os.environ.copy()
+        env.update(DEEPSEEK_API_KEY=key, CODEX_ROUTER_BYPASS="1")
+        return subprocess.call([REAL_CODEX, *deepseek_args(args)], env=env)
+    os.environ["FORCE_DEEPSEEK"] = "1"
+    return run_codex(args)
+
+
 def classify_deepseek_error(output: str) -> str:
     if BILLING_RE.search(output): return "billing"
     if DEEPSEEK_QUOTA_RE.search(output): return "quota"
@@ -456,7 +490,8 @@ def run_codex(args: list[str]) -> int:
         if os.environ.get("FORCE_DEEPSEEK") != "1":
             state = load_state(); state["state"] = "DEEPSEEK_ACTIVE"; save_state(state)
         argv = [REAL_CODEX, *deepseek_args(args)]
-        print(f"[Codex Router] Provider: DeepSeek | Model: {fallback_model()} | Reasoning: {reasoning_effort()} | OpenAI cooldown", file=sys.stderr)
+        trigger = "OpenAI usage limit" if load_state().get("state") == "OPENAI_COOLDOWN" else "requested"
+        print(f"[Codex Router] Provider: DeepSeek | Model: {fallback_model()} | Reasoning: {reasoning_effort()} | {trigger}", file=sys.stderr)
     else:
         argv = [REAL_CODEX, *args]
         print("[Codex Router] Provider: OpenAI | ChatGPT login", file=sys.stderr)
@@ -716,6 +751,8 @@ def test(name: str) -> int:
 def main() -> int:
     ensure_dirs()
     invoked = pathlib.Path(sys.argv[0]).name
+    if invoked == "deep":
+        return run_codex_deepseek(sys.argv[1:])
     if invoked == "codex":
         return run_codex(sys.argv[1:])
     if invoked == "ai":
@@ -727,6 +764,7 @@ def main() -> int:
     if args[0] == "model": return model_command(args[1] if len(args) > 1 else None)
     if args[0] == "models": return models_command(args[1] if len(args) > 1 else None)
     if args[0] == "reasoning": return reasoning_command(args[1] if len(args) > 1 else None)
+    if args[0] in ("deep", "deepseek"): return run_codex_deepseek(args[1:])
     if args[0] == "logs":
         files=sorted(LOG_DIR.glob("*.jsonl")); print("".join(files[-1].read_text().splitlines(True)[-50:]) if files else "No logs", end=""); return 0
     if args[0] == "reset":
@@ -736,7 +774,7 @@ def main() -> int:
     if args[0] == "test" and len(args) == 2: return test(args[1])
     if args[0] == "uninstall":
         return subprocess.call([str(BASE / "uninstall.sh")])
-    print("Usage: codex-router {status|model [flash|pro|vision]|models [list|check|refresh]|reasoning [low|high|max]|doctor|logs|key set|test NAME|reset|uninstall}", file=sys.stderr); return 2
+    print("Usage: codex-router {status|deep|deepseek [CODEX_ARGS]|model [flash|pro|vision]|models [list|check|refresh]|reasoning [low|high|max]|doctor|logs|key set|test NAME|reset|uninstall}", file=sys.stderr); return 2
 
 
 if __name__ == "__main__":

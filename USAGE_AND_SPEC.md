@@ -157,9 +157,18 @@ codex-router test checkpoint
 
 # Interactive 강제 fallback
 FORCE_DEEPSEEK=1 codex --yolo
+
+# 같은 실행을 줄여 쓰는 DeepSeek 전용 명령
+deep codex --yolo
+codex-router deep --yolo
+codex-router deepseek --yolo
 ```
 
 `FORCE_DEEPSEEK=1`은 해당 명령 한 번에만 DeepSeek를 선택하며 Router의 OpenAI/cooldown 상태는 변경하지 않는다. 숫자 `1`은 model 번호가 아니라 활성화를 의미하는 boolean flag다.
+
+`deep` 명령과 `codex-router deep|deepseek`는 OpenAI 상태·cooldown과 무관하게 DeepSeek를 선택한다. 첫 인자가 `codex`이면 무시하므로 `deep codex --yolo`와 `deep --yolo`가 동일하며, 비대화형 `deep exec "..."`도 DeepSeek profile을 유지한다. Key가 없으면 Codex를 시작하지 않고 exit code 78로 종료한다.
+
+일반 `codex` 명령은 기존과 동일하게 ChatGPT 로그인 Codex(GPT 모델)를 사용한다. DeepSeek는 `deep` 접두어를 붙였을 때만 선택되며, 두 명령은 같은 Codex binary와 같은 config·MCP·project trust를 공유한다.
 
 ### 4.8 상태 초기화
 
@@ -439,6 +448,7 @@ Router가 `forkpty()`로 Codex를 실행할 때 실제 터미널의 rows/columns
 | 로그 | `codex-router logs` |
 | OpenAI 테스트 | `codex-router test openai` |
 | DeepSeek 테스트 | `codex-router test deepseek` |
+| DeepSeek 전용 실행 | `deep codex --yolo`, `codex-router deep|deepseek --yolo` |
 | 강제 fallback | `FORCE_DEEPSEEK=1 codex --yolo` |
 | Router 상태 초기화 | `codex-router reset` |
 | 제거 | `codex-router uninstall` |

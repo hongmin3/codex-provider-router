@@ -66,12 +66,16 @@ FORCE_DEEPSEEK=1 codex --yolo
 
 ```powershell
 codex-router deepseek --yolo
+deep codex --yolo
 ```
+
+`deep`는 Windows에서는 `deep.cmd`, macOS에서는 `~/.local/bin/deep`으로 설치되는 같은 이름의 명령입니다. 두 플랫폼 모두 `deep codex --yolo`와 `deep --yolo`가 동일한 실행입니다.
 
 프롬프트를 바로 전달하려면:
 
 ```powershell
 codex-router deepseek --yolo "이 프로젝트의 테스트를 실행하고 실패 원인을 수정해줘"
+deep --yolo "이 프로젝트의 테스트를 실행하고 실패 원인을 수정해줘"
 ```
 
 기본 OpenAI/ChatGPT 로그인 Codex를 사용할 때는 그대로 실행합니다.
@@ -88,7 +92,10 @@ Windows wrapper는 원본 Codex 경로를 별도 보존하고 `FORCE_DEEPSEEK=1`
 
 ```bash
 FORCE_DEEPSEEK=1 codex --yolo
+deep codex --yolo
 ```
+
+`deep`는 Router가 함께 설치하는 DeepSeek 전용 명령입니다. `deep codex --yolo`, `deep --yolo`, `codex-router deep|deepseek --yolo`가 모두 같은 실행이며, 뒤에 프롬프트를 붙이거나 파이프로 넘길 수도 있습니다. `deep exec "..."`처럼 비대화형으로 실행해도 DeepSeek profile이 유지됩니다.
 
 이 설치 방식은 macOS용입니다. 새 Mac에는 Codex CLI가 `/opt/homebrew/bin/codex`에 설치되어 있고 ChatGPT 로그인이 완료되어 있어야 합니다. Git, `curl`, `python3`, macOS Keychain도 사용합니다.
 
@@ -240,7 +247,7 @@ ai doctor
 - Reasoning: `codex-router reasoning`, `codex-router reasoning low|high|max`
 - OpenAI 모델: Codex 세션 내 `/model` (라우터 설정과 독립)
 - Key 설정: `codex-router key set` (macOS Keychain에 숨겨서 저장)
-- 강제 DeepSeek: `FORCE_DEEPSEEK=1 codex --yolo`
+- 강제 DeepSeek: `deep codex --yolo`, `FORCE_DEEPSEEK=1 codex --yolo`
 - 진단/테스트: `codex-router doctor`, `codex-router test deepseek`
 - 로그: `~/.codex/router/logs/`
 - 설정: `~/.config/codex-router/config.toml` (API Key 미포함)
