@@ -74,7 +74,27 @@ if [[ -n "$key_file" ]]; then
   chmod 600 "$key_file" 2>/dev/null || true
 fi
 
-stamp=$(date +%Y%m%d-%H%M%S)
+# Download and validate before changing any installed files.
+stage_dir=$(mktemp -d)
+trap 'rm -rf "$stage_dir"' EXIT
+curl -LfsS --connect-timeout 10 --max-time 60 'https://cdn.deepseek.com/api-docs/codex-deepseek-setup-en.sh' -o "$stage_dir/setup.sh"
+awk '/<<'"'"'CODEX_MODELS_JSON'"'"'/{copy=1; next} /^CODEX_MODELS_JSON$/{if (copy) exit} copy{print}' "$stage_dir/setup.sh" > "$stage_dir/deepseek-models.json"
+python3 - "$stage_dir/deepseek-models.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1]) as handle:
+    catalog = json.load(handle)
+models = catalog.get("models") if isinstance(catalog, dict) else None
+if not isinstance(models, list) or not models or any(
+    not isinstance(m, dict) or not isinstance(m.get("slug"), str) or not m["slug"].strip()
+    for m in models
+):
+    raise SystemExit("Invalid DeepSeek catalog; installed files were not changed.")
+if len({m["slug"] for m in models}) != len(models):
+    raise SystemExit("Duplicate DeepSeek model slugs; installed files were not changed.")
+PY
+
+stamp=$(date +%Y%m%d-%H%M%S)-$$
 backup_dir="$HOME/.codex-backup/$stamp"
 router_dir="$HOME/.codex/router"
 config_dir="$HOME/.config/codex-router"
@@ -95,15 +115,12 @@ cp "$project_dir/src/model_router.py" "$router_dir/model_router.py"
 if ! grep -q '^\[model_router\]$' "$config_dir/config.toml"; then
   sed -n '/^\[model_router\]$/,$p' "$project_dir/config/config.toml" >> "$config_dir/config.toml"
 fi
-cp "$project_dir/config/models.toml" "$config_dir/models.toml"
-cp "$project_dir/config/deepseek.config.toml" "$HOME/.codex/deepseek.config.toml"
+[[ -f "$config_dir/models.toml" ]] || cp "$project_dir/config/models.toml" "$config_dir/models.toml"
+[[ -f "$HOME/.codex/deepseek.config.toml" ]] || cp "$project_dir/config/deepseek.config.toml" "$HOME/.codex/deepseek.config.toml"
 chmod 700 "$router_dir/codex_router.py" "$router_dir/model_router.py"
 chmod 600 "$config_dir/config.toml" "$config_dir/models.toml" "$HOME/.codex/deepseek.config.toml"
-setup_tmp=$(mktemp)
-trap 'rm -f "$setup_tmp"' EXIT
-curl -LfsS 'https://cdn.deepseek.com/api-docs/codex-deepseek-setup-en.sh' -o "$setup_tmp"
-awk '/<<'"'"'CODEX_MODELS_JSON'"'"'/{copy=1; next} /^CODEX_MODELS_JSON$/{if (copy) exit} copy{print}' "$setup_tmp" > "$router_dir/deepseek-models.json"
-python3 -m json.tool "$router_dir/deepseek-models.json" >/dev/null
+[[ -f "$router_dir/deepseek-models.json" ]] && cp -p "$router_dir/deepseek-models.json" "$backup_dir/deepseek-models.json"
+cp "$stage_dir/deepseek-models.json" "$router_dir/deepseek-models.json"
 chmod 600 "$router_dir/deepseek-models.json"
 if [[ -n "$key_value" ]]; then
   keychain_account=${USER:-$(id -un)}
