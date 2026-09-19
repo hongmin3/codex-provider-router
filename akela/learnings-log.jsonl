@@ -99,3 +99,14 @@
 {"v":1,"ts":"2026-09-16T00:33:39Z","run":"develop-add-deep-shortcut-command-1a89b7","activity":"develop","event":"applied","src":"REF-project-overview#boundaries"}
 {"v":1,"ts":"2026-09-16T00:33:40Z","run":"develop-add-deep-shortcut-command-1a89b7","activity":"develop","event":"applied","src":"REF-troubleshooting#diagnosis"}
 {"v":1,"ts":"2026-09-16T00:33:41Z","run":"develop-add-deep-shortcut-command-1a89b7","activity":"develop","event":"outcome","status":"DONE"}
+{"v":1,"ts":"2026-09-19T02:41:12Z","run":"develop-deep-default-591f9f","activity":"develop","pfp":"44136fa355b3","event":"compiled","sources":["REF-project-overview#purpose","REF-project-overview#boundaries","REF-troubleshooting#secrets","REF-troubleshooting#diagnosis","REF-workflow#development"],"hashes":{"REF-project-overview#purpose":"e3caed6d2c32","REF-project-overview#boundaries":"bde5b1f872a3","REF-troubleshooting#secrets":"7f95f86686f2","REF-troubleshooting#diagnosis":"665768cc5908","REF-workflow#development":"3eeca0485eb2"},"used":10,"max":0,"dropped":[]}
+{"v":1,"ts":"2026-09-19T02:42:27Z","run":"develop-deep-default-591f9f","activity":"develop","event":"applied","src":"REF-project-overview#purpose"}
+{"v":1,"ts":"2026-09-19T02:42:27Z","run":"develop-deep-default-591f9f","activity":"develop","event":"applied","src":"REF-project-overview#boundaries"}
+{"v":1,"ts":"2026-09-19T02:42:27Z","run":"develop-deep-default-591f9f","activity":"develop","event":"applied","src":"REF-troubleshooting#secrets"}
+{"v":1,"ts":"2026-09-19T02:42:27Z","run":"develop-deep-default-591f9f","activity":"develop","event":"applied","src":"REF-workflow#development"}
+{"v":1,"ts":"2026-09-19T02:42:34Z","run":"develop-deep-default-591f9f","activity":"develop","event":"outcome","status":"DONE"}
+{"v":1,"ts":"2026-09-19T02:44:30Z","run":"develop-deep-shortcut-parity-660003","activity":"develop","pfp":"44136fa355b3","event":"compiled","sources":["REF-project-overview#purpose","REF-project-overview#boundaries","REF-troubleshooting#secrets","REF-troubleshooting#diagnosis","REF-workflow#development"],"hashes":{"REF-project-overview#purpose":"e3caed6d2c32","REF-project-overview#boundaries":"bde5b1f872a3","REF-troubleshooting#secrets":"7f95f86686f2","REF-troubleshooting#diagnosis":"665768cc5908","REF-workflow#development":"3eeca0485eb2"},"used":10,"max":0,"dropped":[]}
+{"v":1,"ts":"2026-09-19T02:44:35Z","run":"develop-deep-shortcut-parity-660003","activity":"develop","event":"applied","src":"REF-project-overview#boundaries"}
+{"v":1,"ts":"2026-09-19T02:44:35Z","run":"develop-deep-shortcut-parity-660003","activity":"develop","event":"applied","src":"REF-troubleshooting#secrets"}
+{"v":1,"ts":"2026-09-19T02:44:35Z","run":"develop-deep-shortcut-parity-660003","activity":"develop","event":"applied","src":"REF-workflow#development"}
+{"v":1,"ts":"2026-09-19T02:44:35Z","run":"develop-deep-shortcut-parity-660003","activity":"develop","event":"outcome","status":"DONE"}
