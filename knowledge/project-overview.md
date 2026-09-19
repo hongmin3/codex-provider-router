@@ -6,4 +6,4 @@ ChatGPT 로그인 Codex를 기본으로 유지하고 usage limit에서만 DeepSe
 
 ## Boundaries
 <!-- akela: id=boundaries scope=all tier=must -->
-Wrapper, provider profile, state, checkpoint, log, Keychain 연결만 소유합니다. Codex binary·ChatGPT 인증·MCP·project trust는 변경하지 않으며 provider hot-swap을 지원한다고 가정하지 않습니다.
+Wrapper, provider profile, state, checkpoint, log, 자격증명 저장소(macOS Keychain, Windows DPAPI) 연결만 소유합니다. Codex binary·ChatGPT 인증·MCP·project trust는 변경하지 않으며 provider hot-swap을 지원한다고 가정하지 않습니다.
