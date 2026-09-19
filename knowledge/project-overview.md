@@ -1,7 +1,7 @@
 # Project overview
 
 ## Purpose
-<!-- akela: id=purpose scope=all tier=must -->
+<!-- akela: id=purpose scope=develop,test,operate tier=should -->
 ChatGPT 로그인 Codex를 기본으로 유지하고 usage limit에서만 DeepSeek로 전환하며, 사용자는 `codex` 명령 하나를 계속 사용합니다.
 
 ## Boundaries
