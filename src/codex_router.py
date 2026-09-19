@@ -40,7 +40,7 @@ USAGE_RE = re.compile(
     r"|(?:quota\s+(?:exceeded|reached))|(?:too many requests)"
     r"|(?:no\s+(?:usage|requests?|tokens?)\s+(?:remaining|left))"
     r"|(?:(?:you(?:'|’)?re|your workspace is)\s+out of credits)"
-    r"|(?:usage not included)|(?:0%\s+left)"
+    r"|(?:usage not included)|(?:(?<![\d.])0%\s+left)"
     r"|(?:(?:http|status(?:\s+code)?)\s*[:=]?\s*429)",
     re.I,
 )
@@ -71,7 +71,8 @@ def config() -> dict:
     defaults = {"primary": {"provider": "openai"},
                 "fallback": {"provider": "deepseek", "model": DEFAULT_MODEL, "reasoning_effort": "high"},
                 "routing": {"auto_fallback": True, "auto_return": True, "probe_minutes": [10, 20, 30, 60], "max_fallback_minutes": 480, "catalog_check_hours": 24},
-                "cost": {"daily_limit_usd": 25.0, "monthly_limit_usd": 100.0},
+                "cost": {"daily_limit_usd": 25.0, "monthly_limit_usd": 100.0,
+                         "low_balance_usd": model_router.LOW_BALANCE_USD},
                 "model_router": {"recommendation": True, "auto_model_switch": False,
                                  "auto_provider_failover": False, "auto_escalation": False},
                 "classifier": {"enabled": False, "confidence_threshold": 0.70,
@@ -87,7 +88,7 @@ def config() -> dict:
 def write_config(cfg: dict) -> None:
     def boolean(value: object) -> str:
         return "true" if value else "false"
-    data = f'''[primary]\nprovider = "openai"\n\n[fallback]\nprovider = "deepseek"\nmodel = "{cfg['fallback']['model']}"\nreasoning_effort = "{cfg['fallback']['reasoning_effort']}"\n\n[routing]\nauto_fallback = {boolean(cfg['routing']['auto_fallback'])}\nauto_return = {boolean(cfg['routing']['auto_return'])}\nprobe_minutes = [{', '.join(str(int(v)) for v in cfg['routing']['probe_minutes'])}]\nmax_fallback_minutes = {int(cfg['routing']['max_fallback_minutes'])}\ncatalog_check_hours = {int(cfg['routing']['catalog_check_hours'])}\n\n[cost]\ndaily_limit_usd = {float(cfg['cost']['daily_limit_usd'])}\nmonthly_limit_usd = {float(cfg['cost']['monthly_limit_usd'])}\n\n[model_router]\nrecommendation = {boolean(cfg['model_router']['recommendation'])}\nauto_model_switch = {boolean(cfg['model_router']['auto_model_switch'])}\nauto_provider_failover = {boolean(cfg['model_router']['auto_provider_failover'])}\nauto_escalation = {boolean(cfg['model_router']['auto_escalation'])}\n\n[classifier]\nenabled = {boolean(cfg['classifier']['enabled'])}\nconfidence_threshold = {float(cfg['classifier']['confidence_threshold'])}\nmax_output_tokens = {int(cfg['classifier']['max_output_tokens'])}\n\n[provider_cache]\nttl_minutes = {int(cfg['provider_cache']['ttl_minutes'])}\nrate_limit_minutes = {int(cfg['provider_cache']['rate_limit_minutes'])}\n'''
+    data = f'''[primary]\nprovider = "openai"\n\n[fallback]\nprovider = "deepseek"\nmodel = "{cfg['fallback']['model']}"\nreasoning_effort = "{cfg['fallback']['reasoning_effort']}"\n\n[routing]\nauto_fallback = {boolean(cfg['routing']['auto_fallback'])}\nauto_return = {boolean(cfg['routing']['auto_return'])}\nprobe_minutes = [{', '.join(str(int(v)) for v in cfg['routing']['probe_minutes'])}]\nmax_fallback_minutes = {int(cfg['routing']['max_fallback_minutes'])}\ncatalog_check_hours = {int(cfg['routing']['catalog_check_hours'])}\n\n[cost]\ndaily_limit_usd = {float(cfg['cost']['daily_limit_usd'])}\nmonthly_limit_usd = {float(cfg['cost']['monthly_limit_usd'])}\n# DeepSeek 잔액이 이 금액(USD) 미만이면 세션 시작 시 경고합니다.\nlow_balance_usd = {float(cfg['cost'].get('low_balance_usd', model_router.LOW_BALANCE_USD))}\n\n[model_router]\nrecommendation = {boolean(cfg['model_router']['recommendation'])}\nauto_model_switch = {boolean(cfg['model_router']['auto_model_switch'])}\nauto_provider_failover = {boolean(cfg['model_router']['auto_provider_failover'])}\nauto_escalation = {boolean(cfg['model_router']['auto_escalation'])}\n\n[classifier]\n# 기본 OFF: 일반 라우팅은 local heuristic만 사용하므로 추가 LLM token은 0입니다.\nenabled = {boolean(cfg['classifier']['enabled'])}\nconfidence_threshold = {float(cfg['classifier']['confidence_threshold'])}\nmax_output_tokens = {int(cfg['classifier']['max_output_tokens'])}\n\n[provider_cache]\nttl_minutes = {int(cfg['provider_cache']['ttl_minutes'])}\nrate_limit_minutes = {int(cfg['provider_cache']['rate_limit_minutes'])}\n'''
     tmp = CONFIG.with_suffix(".tmp")
     tmp.write_text(data); os.chmod(tmp, 0o600); tmp.replace(CONFIG)
 
@@ -100,11 +101,33 @@ def reasoning_effort() -> str:
     return str(config()["fallback"]["reasoning_effort"])
 
 
+def low_balance_usd() -> float:
+    """USD amount below which a DeepSeek balance is warned about."""
+    try:
+        value = float(config()["cost"].get("low_balance_usd", model_router.LOW_BALANCE_USD))
+    except (KeyError, TypeError, ValueError):
+        return model_router.LOW_BALANCE_USD
+    return value if value >= 0 else model_router.LOW_BALANCE_USD
+
+
 def catalog_models() -> list[str]:
     try:
-        return [m["slug"] for m in json.loads((BASE / "deepseek-models.json").read_text()).get("models", [])]
-    except (OSError, KeyError, json.JSONDecodeError):
+        catalog = json.loads((BASE / "deepseek-models.json").read_text())
+        validate_catalog(catalog)
+        return [m["slug"] for m in catalog["models"]]
+    except (OSError, ValueError):
         return ["deepseek-flash", "deepseek-v4-pro"]
+
+
+def validate_catalog(catalog: object) -> None:
+    models = catalog.get("models") if isinstance(catalog, dict) else None
+    if not isinstance(models, list) or not models or any(
+        not isinstance(m, dict) or not isinstance(m.get("slug"), str) or not m["slug"].strip()
+        for m in models
+    ):
+        raise ValueError("official catalog is missing valid model slugs")
+    if len({m["slug"] for m in models}) != len(models):
+        raise ValueError("official catalog contains duplicate model slugs")
 
 
 def parse_official_catalog(script: str) -> dict:
@@ -112,9 +135,7 @@ def parse_official_catalog(script: str) -> dict:
     if not match:
         raise ValueError("official catalog block not found")
     catalog = json.loads(match.group(1))
-    models = catalog.get("models")
-    if not isinstance(models, list) or not models or any(not isinstance(m.get("slug"), str) for m in models):
-        raise ValueError("official catalog is missing valid model slugs")
+    validate_catalog(catalog)
     return catalog
 
 
@@ -145,9 +166,10 @@ def check_model_catalog(force: bool = False, announce: bool = True) -> tuple[str
                 print(f"[Codex Router] 모델 알림: 현재 선택 모델 `{selected}`이 최신 공식 catalog에 없습니다. 기존 catalog와 설정을 유지합니다.", file=sys.stderr)
             return "selected_model_missing", []
         path = BASE / "deepseek-models.json"
-        if path.exists() and path.read_text() != json.dumps(remote, ensure_ascii=False, indent=2) + "\n":
-            backup = BASE / "deepseek-models.previous.json"
-            backup.write_text(path.read_text()); os.chmod(backup, 0o600)
+        if not path.exists() or path.read_text() != json.dumps(remote, ensure_ascii=False, indent=2) + "\n":
+            if path.exists():
+                backup = BASE / "deepseek-models.previous.json"
+                backup.write_text(path.read_text()); os.chmod(backup, 0o600)
             tmp = path.with_suffix(".tmp")
             tmp.write_text(json.dumps(remote, ensure_ascii=False, indent=2) + "\n"); os.chmod(tmp, 0o600); tmp.replace(path)
         state["new_deepseek_models"] = new_models
@@ -174,12 +196,23 @@ def model_aliases() -> dict[str, str]:
 
 
 def load_state() -> dict:
-    if not STATE_FILE.exists():
-        return {"state": "OPENAI_ACTIVE", "probe_attempt": 0, "updated_at": iso()}
+    default = {"state": "OPENAI_ACTIVE", "probe_attempt": 0, "updated_at": iso()}
     try:
-        return json.loads(STATE_FILE.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {"state": "OPENAI_ACTIVE", "probe_attempt": 0, "updated_at": iso()}
+        state = json.loads(STATE_FILE.read_text())
+        if not isinstance(state, dict):
+            return default
+        if state.get("state") not in ("OPENAI_ACTIVE", "OPENAI_COOLDOWN", "DEEPSEEK_ACTIVE"):
+            return default
+        attempt = state.get("probe_attempt", 0)
+        if type(attempt) is not int or attempt < 0:
+            return default
+        if state["state"] != "OPENAI_ACTIVE":
+            due = dt.datetime.fromisoformat(state["next_probe_at"])
+            if due.tzinfo is None:
+                return default
+        return state
+    except (OSError, ValueError, TypeError, KeyError):
+        return default
 
 
 def save_state(value: dict) -> None:
@@ -287,6 +320,34 @@ def cooldown(reason: str, output: str = "") -> None:
     log("fallback", provider="deepseek", model=fallback_model(), reason=reason, next_probe_at=state["next_probe_at"])
 
 
+def mark_openai_active(reason: str) -> None:
+    state = load_state()
+    for field in ("reason", "limit_type", "cooldown_started_at", "next_probe_at", "reset_at"):
+        state.pop(field, None)
+    state.update(state="OPENAI_ACTIVE", probe_attempt=0)
+    save_state(state)
+    model_router.update_provider("openai", "AVAILABLE", reason, source="codex-runtime")
+
+
+def confirm_answer(answer: str) -> bool:
+    return answer.strip().lower() in ("y", "yes")
+
+
+def confirm_fallback(reason: str) -> bool:
+    """Ask before an automatic OpenAI→DeepSeek switch; default is No.
+
+    Explicit requests (`FORCE_DEEPSEEK=1`, the `deep` command) never reach here.
+    Non-interactive runs are handled by the earlier bypass branch in `run_codex`.
+    """
+    if not sys.stdin.isatty():
+        return False
+    try:
+        answer = input(f"\n[Codex Router] {reason} - DeepSeek로 전환할까요? [y/N]: ")
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return confirm_answer(answer)
+
+
 def probe_openai() -> bool:
     state, cfg = load_state(), config()
     print("[Codex Router] OpenAI probe...", file=sys.stderr)
@@ -301,8 +362,7 @@ def probe_openai() -> bool:
         result = subprocess.CompletedProcess([], 124, "", "timeout")
     body = result.stdout + result.stderr
     if result.returncode == 0 and not USAGE_RE.search(body):
-        save_state({"state": "OPENAI_ACTIVE", "probe_attempt": 0, "updated_at": iso()})
-        model_router.update_provider("openai", "AVAILABLE", "OpenAI probe succeeded", source="codex-runtime")
+        mark_openai_active("OpenAI probe succeeded")
         log("openai_return", result="success")
         return True
     attempt = min(int(state.get("probe_attempt", 0)) + 1, len(cfg["routing"]["probe_minutes"]) - 1)
@@ -325,12 +385,17 @@ def select_provider() -> str:
 
 def deepseek_args(args: list[str], resume: bool = False) -> list[str]:
     filtered, skip = [], False
-    for arg in args:
+    for index, arg in enumerate(args):
+        if arg == "--":
+            filtered.extend(args[index:])
+            break
         if skip:
             skip = False
             continue
         if arg in ("-p", "--profile", "-m", "--model"):
             skip = True
+            continue
+        if arg.startswith(("--profile=", "--model=")):
             continue
         filtered.append(arg)
     prefix = ["resume", "--last"] if resume else []
@@ -475,10 +540,17 @@ def run_pty(argv: list[str], env: dict[str, str], watch_usage: bool) -> tuple[in
 
 def run_codex(args: list[str]) -> int:
     ensure_dirs()
-    if os.environ.get("CODEX_ROUTER_BYPASS") == "1" or not sys.stdin.isatty():
+    if os.environ.get("CODEX_ROUTER_BYPASS") == "1":
+        return subprocess.call([REAL_CODEX, *args])
+    if not sys.stdin.isatty():
+        if os.environ.get("FORCE_DEEPSEEK") == "1":
+            return run_codex_deepseek(args)
         return subprocess.call([REAL_CODEX, *args])
     check_model_catalog(force=False, announce=True)
     provider = select_provider()
+    forced = os.environ.get("FORCE_DEEPSEEK") == "1"
+    if provider == "deepseek" and not forced and not confirm_fallback("이전에 OpenAI 사용 한도가 감지되었습니다"):
+        provider = "openai"
     if provider == "deepseek" and not keychain_key():
         print("[Codex Router] DeepSeek key missing. Run: codex-router key set", file=sys.stderr)
         log("failure", provider="deepseek", failure_type="missing_key")
@@ -487,31 +559,49 @@ def run_codex(args: list[str]) -> int:
     env["CODEX_ROUTER_BYPASS"] = "1"
     if provider == "deepseek":
         env["DEEPSEEK_API_KEY"] = keychain_key() or ""
-        if os.environ.get("FORCE_DEEPSEEK") != "1":
+        if not forced:
             state = load_state(); state["state"] = "DEEPSEEK_ACTIVE"; save_state(state)
         argv = [REAL_CODEX, *deepseek_args(args)]
         trigger = "OpenAI usage limit" if load_state().get("state") == "OPENAI_COOLDOWN" else "requested"
-        print(f"[Codex Router] Provider: DeepSeek | Model: {fallback_model()} | Reasoning: {reasoning_effort()} | {trigger}", file=sys.stderr)
+        summary, notice = session_balance()
+        banner = f"[Codex Router] Provider: DeepSeek | Model: {fallback_model()} | Reasoning: {reasoning_effort()} | {trigger}"
+        print(banner + (f" | Balance: {summary}" if summary else ""), file=sys.stderr)
+        if notice:
+            print(f"[Codex Router] {notice}", file=sys.stderr)
     else:
         argv = [REAL_CODEX, *args]
         print("[Codex Router] Provider: OpenAI | ChatGPT login", file=sys.stderr)
     log("session_start", provider=provider, model=fallback_model() if provider == "deepseek" else "configured-default", reasoning=reasoning_effort() if provider == "deepseek" else None)
     code, detected, output_tail = run_pty(argv, env, provider == "openai")
+    fell_back = False
     if detected == "usage_limit":
         checkpoint(detected)
-        cooldown(detected, output_tail)
-        key = keychain_key()
-        if not key:
-            print("\n[Codex Router] Usage limit detected; DeepSeek key is not configured. Run: codex-router key set", file=sys.stderr)
-            return 78
-        print(f"\n[Codex Router] Usage limit detected. Continuing with DeepSeek ({fallback_model()}, {reasoning_effort()})...", file=sys.stderr)
-        env["DEEPSEEK_API_KEY"] = key
-        code, _, output_tail = run_pty([REAL_CODEX, *deepseek_args(args, resume=True)], env, False)
-        if code != 0:
-            report_deepseek_error(output_tail, code)
+        if not confirm_fallback("OpenAI 사용 한도가 감지되었습니다"):
+            print("\n[Codex Router] DeepSeek 전환을 건너뜁니다.", file=sys.stderr)
+            log("fallback_declined", reason="usage_limit")
+        else:
+            cooldown(detected, output_tail)
+            key = keychain_key()
+            if not key:
+                print("\n[Codex Router] Usage limit detected; DeepSeek key is not configured. Run: codex-router key set", file=sys.stderr)
+                return 78
+            summary, notice = session_balance()
+            details = f"{fallback_model()}, {reasoning_effort()}" + (f", 잔액 {summary}" if summary else "")
+            print(f"\n[Codex Router] Usage limit detected. Continuing with DeepSeek ({details})...", file=sys.stderr)
+            env["DEEPSEEK_API_KEY"] = key
+            if notice:
+                print(f"[Codex Router] {notice}", file=sys.stderr)
+            fell_back = True
+            code, _, output_tail = run_pty([REAL_CODEX, *deepseek_args(args, resume=True)], env, False)
+            if code != 0:
+                report_deepseek_error(output_tail, code)
     elif provider == "deepseek" and code != 0:
         report_deepseek_error(output_tail, code)
-    log("session_end", provider="deepseek" if detected else provider, exit_code=code)
+    elif provider == "openai" and code == 0:
+        mark_openai_active("OpenAI session completed successfully")
+    if provider == "deepseek" or fell_back:
+        report_session_balance()
+    log("session_end", provider="deepseek" if fell_back else provider, exit_code=code)
     return code
 
 
@@ -668,7 +758,119 @@ def status() -> int:
           f"DeepSeek Key: {'Configured' if keychain_key() else 'Not Configured'}\n"
           f"New DeepSeek Models: {updates}\n"
           f"Last Catalog Check: {state.get('last_catalog_check_at', '-')}")
+    entry = model_router.load_provider_status().get("deepseek", {})
+    balance = entry.get("balance")
+    if isinstance(balance, dict):
+        print(f"DeepSeek Balance: {balance.get('currency', 'USD')} {float(balance['total']):.2f} "
+              f"(checked {entry.get('balance_checked_at', '-')})")
+    notice = low_balance_notice(entry)
+    if notice:
+        print(notice)
     return 0
+
+
+def low_balance_notice(entry: dict | None = None) -> str | None:
+    """Warning line built from the cached provider status; makes no network call."""
+    if entry is None:
+        entry = model_router.load_provider_status().get("deepseek", {})
+    balance = entry.get("balance")
+    if not entry.get("low_balance") or not isinstance(balance, dict):
+        return None
+    currency = balance.get("currency", "USD")
+    message = model_router.low_balance_message(currency, entry.get("low_balance_threshold"))
+    return f"{message} (현재 {currency} {float(balance['total']):.2f})"
+
+
+def refresh_balance_cache(max_age_minutes: float) -> None:
+    """Refresh a stale balance in a CHILD process, never in this one.
+
+    `run_pty` forks a PTY for the Codex session, and on macOS an HTTPS request leaves
+    resolver threads behind; forking a multi-threaded process is deadlock-prone and
+    Python warns about it. So the lookup runs as `codex_router.py balance --json`,
+    which writes the cache this process then reads. A failure is silent: the session
+    starts with whatever the cache already holds.
+    """
+    entry = model_router.load_provider_status().get("deepseek", {})
+    checked = entry.get("balance_checked_at")
+    if checked and isinstance(entry.get("balance"), dict):
+        try:
+            if dt.datetime.fromisoformat(checked) > now() - dt.timedelta(minutes=float(max_age_minutes)):
+                return
+        except (TypeError, ValueError):
+            pass
+    try:
+        subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), "balance", "--json"],
+                       capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def balance_summary(entry: dict) -> str | None:
+    """`USD 2.79` for a cached DeepSeek entry, or None when no amount is cached."""
+    balance = entry.get("balance") if isinstance(entry, dict) else None
+    if not isinstance(balance, dict):
+        return None
+    try:
+        return f"{balance.get('currency', 'USD')} {float(balance['total']):.2f}"
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def session_balance() -> tuple[str | None, str | None]:
+    """(balance summary, low-balance warning) for a DeepSeek session start, from cache."""
+    try:
+        refresh_balance_cache(config()["provider_cache"]["ttl_minutes"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    entry = model_router.load_provider_status().get("deepseek", {})
+    return balance_summary(entry), low_balance_notice(entry)
+
+
+def report_session_balance() -> None:
+    """Fresh balance after a DeepSeek session so the remaining amount is visible on exit."""
+    result = model_router.fetch_deepseek_balance(timeout=5.0)
+    if not result.get("ok"):
+        return
+    threshold = low_balance_usd()
+    model_router.record_balance(result, threshold)
+    entry = {"balance": result.get("balance"),
+             "low_balance": model_router.is_low_balance(result, threshold),
+             "low_balance_threshold": threshold}
+    summary = balance_summary(entry)
+    if summary:
+        print(f"[Codex Router] DeepSeek 잔액: {summary}", file=sys.stderr)
+    notice = low_balance_notice(entry)
+    if notice:
+        print(f"[Codex Router] {notice}", file=sys.stderr)
+
+
+def balance_threshold_command(value: str | None) -> int:
+    if value is None:
+        print(f"Low balance warning: USD {low_balance_usd():.2f}")
+        return 0
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        print(f"Unsupported amount: {value}. Use a number of USD, e.g. 1 or 2.5", file=sys.stderr)
+        return 2
+    if amount < 0:
+        print(f"Unsupported amount: {value}. Use 0 or more.", file=sys.stderr)
+        return 2
+    cfg = config()
+    cfg["cost"]["low_balance_usd"] = amount
+    write_config(cfg)
+    print(f"Low balance warning: USD {amount:.2f}")
+    return 0
+
+
+def balance_command(args: list[str]) -> int:
+    """Show the remaining DeepSeek balance, or read/set the warning threshold."""
+    if args and args[0] == "threshold":
+        return balance_threshold_command(args[1] if len(args) > 1 else None)
+    if [arg for arg in args if arg != "--json"]:
+        print("Usage: codex-router balance [--json] | codex-router balance threshold [AMOUNT]", file=sys.stderr)
+        return 2
+    return model_router.balance_report(args, low_balance_usd())
 
 
 def model_command(value: str | None) -> int:
@@ -761,6 +963,7 @@ def main() -> int:
     if not args or args[0] == "status": return status()
     if args[:2] == ["key", "set"]: return set_key()
     if args[0] == "doctor": return doctor()
+    if args[0] == "balance": return balance_command(args[1:])
     if args[0] == "model": return model_command(args[1] if len(args) > 1 else None)
     if args[0] == "models": return models_command(args[1] if len(args) > 1 else None)
     if args[0] == "reasoning": return reasoning_command(args[1] if len(args) > 1 else None)
@@ -774,7 +977,7 @@ def main() -> int:
     if args[0] == "test" and len(args) == 2: return test(args[1])
     if args[0] == "uninstall":
         return subprocess.call([str(BASE / "uninstall.sh")])
-    print("Usage: codex-router {status|deep|deepseek [CODEX_ARGS]|model [flash|pro|vision]|models [list|check|refresh]|reasoning [low|high|max]|doctor|logs|key set|test NAME|reset|uninstall}", file=sys.stderr); return 2
+    print("Usage: codex-router {status|balance [--json]|balance threshold [AMOUNT]|deep|deepseek [CODEX_ARGS]|model [flash|pro|vision]|models [list|check|refresh]|reasoning [low|high|max]|doctor|logs|key set|test NAME|reset|uninstall}", file=sys.stderr); return 2
 
 
 if __name__ == "__main__":

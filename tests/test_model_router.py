@@ -1,7 +1,11 @@
+import contextlib
 import importlib.util
+import io
+import json
 import pathlib
 import tempfile
 import unittest
+import urllib.error
 import sys
 from unittest import mock
 
@@ -11,6 +15,50 @@ mr = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = mr
 spec.loader.exec_module(mr)
 mr.MODELS_CONFIG = ROOT / "config" / "models.toml"
+
+
+
+LIVE_STATE_FILES = (
+    pathlib.Path.home() / ".codex" / "router" / "provider-status.json",
+    pathlib.Path.home() / ".codex" / "router" / "state.json",
+    pathlib.Path.home() / ".config" / "codex-router" / "config.toml",
+)
+_live_snapshot: dict = {}
+
+
+def setUpModule():
+    for path in LIVE_STATE_FILES:
+        _live_snapshot[path] = path.read_bytes() if path.exists() else None
+
+
+def tearDownModule():
+    """No test may touch the user's live router state; restore it and fail if one did."""
+    damaged = []
+    for path, before in _live_snapshot.items():
+        after = path.read_bytes() if path.exists() else None
+        if after == before:
+            continue
+        damaged.append(str(path))
+        if before is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(before)
+    if damaged:
+        raise AssertionError("tests wrote to live router state (restored): " + ", ".join(damaged))
+
+class _Response(io.BytesIO):
+    """Minimal stand-in for the object urlopen returns."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+
+def response(payload):
+    return _Response(json.dumps(payload).encode())
 
 
 def repo(files=20):
@@ -168,6 +216,268 @@ class ModelRouterTests(unittest.TestCase):
         self.assertIsNone(selected)
         self.assertIsNone(effort)
         self.assertEqual(decision.reasoning, "low")
+
+
+
+class DeepSeekBalanceTests(unittest.TestCase):
+    payload = {
+        "is_available": True,
+        "balance_infos": [
+            {"currency": "CNY", "total_balance": "72.50", "granted_balance": "2.50", "topped_up_balance": "70.00"},
+            {"currency": "USD", "total_balance": "10.25", "granted_balance": "0.25", "topped_up_balance": "10.00"},
+        ],
+    }
+
+    def test_parse_balance_prefers_the_usd_entry(self):
+        parsed = mr.parse_balance(self.payload)
+        self.assertEqual(parsed["currency"], "USD")
+        self.assertAlmostEqual(parsed["total"], 10.25)
+        self.assertAlmostEqual(parsed["granted"], 0.25)
+        self.assertAlmostEqual(parsed["topped_up"], 10.00)
+
+    def test_parse_balance_returns_none_when_no_amount_is_readable(self):
+        self.assertIsNone(mr.parse_balance({"is_available": True, "balance_infos": []}))
+        self.assertIsNone(mr.parse_balance({"balance_infos": [{"currency": "USD"}]}))
+        self.assertIsNone(mr.parse_balance("not a payload"))
+
+    def test_low_balance_threshold_defaults_to_one_usd(self):
+        with mock.patch.object(mr, "router_config", return_value={}):
+            self.assertAlmostEqual(mr.low_balance_threshold(), 1.0)
+
+    def test_low_balance_threshold_reads_the_configured_amount(self):
+        with mock.patch.object(mr, "router_config", return_value={"cost": {"low_balance_usd": 5}}):
+            self.assertAlmostEqual(mr.low_balance_threshold(), 5.0)
+
+    def test_low_balance_threshold_ignores_an_unusable_configured_value(self):
+        with mock.patch.object(mr, "router_config", return_value={"cost": {"low_balance_usd": "매우 적음"}}):
+            self.assertAlmostEqual(mr.low_balance_threshold(), 1.0)
+
+    def test_balance_below_the_threshold_is_flagged_low(self):
+        result = {"ok": True, "status": "AVAILABLE", "balance": {"currency": "USD", "total": 0.42,
+                                                                "granted": 0.0, "topped_up": 0.42, "is_available": True}}
+        self.assertTrue(mr.is_low_balance(result, 1.0))
+
+    def test_balance_at_or_above_the_threshold_is_not_flagged_low(self):
+        result = {"ok": True, "status": "AVAILABLE", "balance": {"currency": "USD", "total": 1.0,
+                                                                "granted": 0.0, "topped_up": 1.0, "is_available": True}}
+        self.assertFalse(mr.is_low_balance(result, 1.0))
+
+    def test_a_failed_lookup_is_not_flagged_low(self):
+        self.assertFalse(mr.is_low_balance({"ok": False, "status": "SERVER_ERROR", "balance": None}, 1.0))
+
+    def test_balance_text_warns_below_the_threshold(self):
+        result = {"ok": True, "status": "AVAILABLE", "reason": "Balance endpoint succeeded", "checked_at": mr.iso(),
+                  "balance": {"currency": "USD", "total": 0.42, "granted": 0.0, "topped_up": 0.42, "is_available": True}}
+        text = mr.balance_text(result, 1.0)
+        self.assertIn("USD 0.42", text)
+        self.assertIn("WARNING", text)
+        self.assertIn("USD 1.00", text)
+
+    def test_balance_text_is_quiet_above_the_threshold(self):
+        result = {"ok": True, "status": "AVAILABLE", "reason": "Balance endpoint succeeded", "checked_at": mr.iso(),
+                  "balance": {"currency": "USD", "total": 10.25, "granted": 0.25, "topped_up": 10.00, "is_available": True}}
+        text = mr.balance_text(result, 1.0)
+        self.assertIn("USD 10.25", text)
+        self.assertNotIn("WARNING", text)
+
+    def test_balance_text_reports_a_failed_lookup_without_inventing_an_amount(self):
+        result = {"ok": False, "status": "AUTH_ERROR", "reason": "DeepSeek API key is missing",
+                  "checked_at": mr.iso(), "balance": None}
+        text = mr.balance_text(result, 1.0)
+        self.assertIn("AUTH_ERROR", text)
+        self.assertIn("DeepSeek API key is missing", text)
+        self.assertNotIn("USD 0.00", text)
+
+    def test_fetch_balance_reports_a_missing_key_without_calling_the_api(self):
+        with mock.patch.object(mr, "_keychain_key", return_value=None), \
+                mock.patch.object(mr.urllib.request, "urlopen") as urlopen:
+            result = mr.fetch_deepseek_balance()
+        urlopen.assert_not_called()
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "AUTH_ERROR")
+        self.assertIsNone(result["balance"])
+
+    def test_fetch_balance_returns_the_parsed_usd_amounts(self):
+        with mock.patch.object(mr, "_keychain_key", return_value="secret"), \
+                mock.patch.object(mr.urllib.request, "urlopen", return_value=response(self.payload)):
+            result = mr.fetch_deepseek_balance()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "AVAILABLE")
+        self.assertAlmostEqual(result["balance"]["total"], 10.25)
+        self.assertTrue(result["checked_at"])
+
+    def test_fetch_balance_never_returns_the_api_key(self):
+        with mock.patch.object(mr, "_keychain_key", return_value="sk-secret-value"), \
+                mock.patch.object(mr.urllib.request, "urlopen", return_value=response(self.payload)):
+            result = mr.fetch_deepseek_balance()
+        self.assertNotIn("sk-secret-value", json.dumps(result))
+
+    def test_fetch_balance_maps_http_402_to_balance_exhausted(self):
+        error = urllib.error.HTTPError(mr.BALANCE_URL, 402, "Payment Required", {}, None)
+        with mock.patch.object(mr, "_keychain_key", return_value="secret"), \
+                mock.patch.object(mr.urllib.request, "urlopen", side_effect=error):
+            result = mr.fetch_deepseek_balance()
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "BALANCE_EXHAUSTED")
+        self.assertIsNone(result["balance"])
+
+    def test_fetch_balance_survives_a_network_failure(self):
+        with mock.patch.object(mr, "_keychain_key", return_value="secret"), \
+                mock.patch.object(mr.urllib.request, "urlopen", side_effect=OSError("no route")):
+            result = mr.fetch_deepseek_balance()
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "SERVER_ERROR")
+
+    def test_fetch_balance_reports_an_exhausted_account_with_its_amounts(self):
+        payload = {"is_available": False, "balance_infos": [
+            {"currency": "USD", "total_balance": "0.00", "granted_balance": "0.00", "topped_up_balance": "0.00"}]}
+        with mock.patch.object(mr, "_keychain_key", return_value="secret"), \
+                mock.patch.object(mr.urllib.request, "urlopen", return_value=response(payload)):
+            result = mr.fetch_deepseek_balance()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "BALANCE_EXHAUSTED")
+        self.assertAlmostEqual(result["balance"]["total"], 0.0)
+
+    def refresh_with_balance(self, result):
+        baseline = statuses()
+        with mock.patch.object(mr.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="ChatGPT", stderr="")), \
+                mock.patch.object(mr, "load_provider_status", return_value=baseline), \
+                mock.patch.object(mr, "save_provider_status") as save, \
+                mock.patch.object(mr, "fetch_deepseek_balance", return_value=result), \
+                mock.patch.object(mr, "_keychain_key", return_value="secret"), \
+                mock.patch.object(mr.urllib.request, "urlopen", return_value=response({"data": []})), \
+                mock.patch.object(mr, "low_balance_threshold", return_value=1.0):
+            status = mr.refresh_provider_status()
+        save.assert_called_once()
+        return status
+
+    def test_refresh_records_the_balance_amounts(self):
+        status = self.refresh_with_balance({"ok": True, "status": "AVAILABLE", "reason": "ok", "checked_at": mr.iso(),
+                                            "balance": {"currency": "USD", "total": 10.25, "granted": 0.25,
+                                                        "topped_up": 10.0, "is_available": True}})
+        self.assertEqual(status["deepseek"]["status"], "AVAILABLE")
+        self.assertAlmostEqual(status["deepseek"]["balance"]["total"], 10.25)
+        self.assertFalse(status["deepseek"]["low_balance"])
+
+    def test_a_low_balance_still_leaves_the_provider_usable(self):
+        status = self.refresh_with_balance({"ok": True, "status": "AVAILABLE", "reason": "ok", "checked_at": mr.iso(),
+                                            "balance": {"currency": "USD", "total": 0.42, "granted": 0.0,
+                                                        "topped_up": 0.42, "is_available": True}})
+        self.assertEqual(status["deepseek"]["status"], "AVAILABLE")
+        self.assertTrue(status["deepseek"]["low_balance"])
+        self.assertTrue(mr.provider_available(status["deepseek"]))
+
+    def test_refresh_keeps_reporting_an_exhausted_balance_as_unavailable(self):
+        status = self.refresh_with_balance({"ok": True, "status": "BALANCE_EXHAUSTED", "reason": "insufficient",
+                                            "checked_at": mr.iso(),
+                                            "balance": {"currency": "USD", "total": 0.0, "granted": 0.0,
+                                                        "topped_up": 0.0, "is_available": False}})
+        self.assertEqual(status["deepseek"]["status"], "BALANCE_EXHAUSTED")
+        self.assertFalse(mr.provider_available(status["deepseek"]))
+
+    def test_status_text_shows_the_balance_and_warns_when_it_is_low(self):
+        value = statuses()
+        value["deepseek"].update(balance={"currency": "USD", "total": 0.42, "granted": 0.0,
+                                          "topped_up": 0.42, "is_available": True}, low_balance=True)
+        rendered = mr.status_text(value)
+        self.assertIn("USD 0.42", rendered)
+        self.assertIn("WARNING", rendered)
+
+    def test_status_text_shows_a_healthy_balance_without_a_warning(self):
+        value = statuses()
+        value["deepseek"].update(balance={"currency": "USD", "total": 10.25, "granted": 0.25,
+                                          "topped_up": 10.0, "is_available": True}, low_balance=False)
+        rendered = mr.status_text(value)
+        self.assertIn("USD 10.25", rendered)
+        self.assertNotIn("WARNING", rendered)
+
+
+    def record(self, result, cached=None):
+        status = cached if cached is not None else statuses()
+        with mock.patch.object(mr, "load_provider_status", return_value=status), \
+                mock.patch.object(mr, "save_provider_status") as save:
+            merged = mr.record_balance(result, 1.0)
+        return merged, save
+
+    def test_record_balance_merges_the_amounts_into_the_cached_entry(self):
+        result = {"ok": True, "status": "AVAILABLE", "reason": "ok", "checked_at": "2026-09-19T00:00:00+00:00",
+                  "balance": {"currency": "USD", "total": 10.25, "granted": 0.25, "topped_up": 10.0,
+                              "is_available": True}}
+        merged, save = self.record(result)
+        save.assert_called_once()
+        self.assertEqual(merged["deepseek"]["status"], "AVAILABLE")
+        self.assertAlmostEqual(merged["deepseek"]["balance"]["total"], 10.25)
+        self.assertEqual(merged["deepseek"]["balance_checked_at"], "2026-09-19T00:00:00+00:00")
+        self.assertFalse(merged["deepseek"]["low_balance"])
+
+    def test_record_balance_flags_a_low_amount_without_disabling_the_provider(self):
+        result = {"ok": True, "status": "AVAILABLE", "reason": "ok", "checked_at": mr.iso(),
+                  "balance": {"currency": "USD", "total": 0.42, "granted": 0.0, "topped_up": 0.42,
+                              "is_available": True}}
+        merged, _ = self.record(result)
+        self.assertTrue(merged["deepseek"]["low_balance"])
+        self.assertTrue(mr.provider_available(merged["deepseek"]))
+
+    def test_record_balance_marks_an_exhausted_account_unavailable(self):
+        result = {"ok": True, "status": "BALANCE_EXHAUSTED", "reason": "DeepSeek reports insufficient balance",
+                  "checked_at": mr.iso(),
+                  "balance": {"currency": "USD", "total": 0.0, "granted": 0.0, "topped_up": 0.0,
+                              "is_available": False}}
+        merged, _ = self.record(result)
+        self.assertEqual(merged["deepseek"]["status"], "BALANCE_EXHAUSTED")
+        self.assertFalse(mr.provider_available(merged["deepseek"]))
+
+    def test_record_balance_ignores_a_lookup_that_carries_no_amount(self):
+        merged, save = self.record({"ok": False, "status": "SERVER_ERROR", "reason": "down",
+                                    "checked_at": mr.iso(), "balance": None})
+        save.assert_not_called()
+        self.assertNotIn("balance", merged["deepseek"])
+
+
+    def balance_cli(self, argv, result):
+        buffer = io.StringIO()
+        with mock.patch.object(mr, "fetch_deepseek_balance", return_value=result), \
+                mock.patch.object(mr, "record_balance") as record, \
+                mock.patch.object(mr, "low_balance_threshold", return_value=1.0), \
+                contextlib.redirect_stdout(buffer):
+            code = mr.cli(argv, lambda *args, **kwargs: 99)
+        return code, buffer.getvalue(), record
+
+    def test_ai_balance_reports_the_amount_instead_of_routing_it_as_a_prompt(self):
+        result = {"ok": True, "status": "AVAILABLE", "reason": "ok", "checked_at": mr.iso(),
+                  "balance": {"currency": "USD", "total": 10.25, "granted": 0.25, "topped_up": 10.0,
+                              "is_available": True}}
+        code, output, record = self.balance_cli(["balance"], result)
+        self.assertEqual(code, 0)
+        self.assertIn("USD 10.25", output)
+        record.assert_called_once()
+
+    def test_ai_balance_json_carries_the_low_flag(self):
+        result = {"ok": True, "status": "AVAILABLE", "reason": "ok", "checked_at": mr.iso(),
+                  "balance": {"currency": "USD", "total": 0.42, "granted": 0.0, "topped_up": 0.42,
+                              "is_available": True}}
+        code, output, _ = self.balance_cli(["balance", "--json"], result)
+        payload = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["low_balance"])
+        self.assertAlmostEqual(payload["threshold_usd"], 1.0)
+
+    def test_ai_balance_exits_nonzero_when_the_lookup_fails(self):
+        result = {"ok": False, "status": "SERVER_ERROR", "reason": "down", "checked_at": mr.iso(), "balance": None}
+        code, output, record = self.balance_cli(["balance"], result)
+        self.assertEqual(code, 1)
+        self.assertIn("SERVER_ERROR", output)
+        record.assert_not_called()
+
+
+    def test_refresh_stamps_the_balance_check_time_like_a_direct_lookup(self):
+        """Without it, the staleness check has no timestamp and every session re-fetches."""
+        status = self.refresh_with_balance({"ok": True, "status": "AVAILABLE", "reason": "ok",
+                                            "checked_at": "2026-09-19T07:59:22+00:00",
+                                            "balance": {"currency": "USD", "total": 2.67, "granted": 0.0,
+                                                        "topped_up": 2.67, "is_available": True}})
+        self.assertEqual(status["deepseek"]["balance_checked_at"], "2026-09-19T07:59:22+00:00")
+
 
 
 if __name__ == "__main__":
