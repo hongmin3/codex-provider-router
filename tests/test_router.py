@@ -11,6 +11,7 @@ import struct
 import termios
 import unittest
 import sys
+import unicodedata
 from unittest import mock
 
 SOURCE = pathlib.Path(__file__).parents[1] / "src" / "codex_router.py"
@@ -530,13 +531,243 @@ class BalanceCommandTests(unittest.TestCase):
         stderr = io.StringIO()
         with mock.patch.object(router, "ensure_dirs"), \
                 mock.patch.object(router, "keychain_key", return_value="secret"), \
-                mock.patch.object(router.sys, "stdin", mock.Mock(isatty=lambda: False)), \
+               mock.patch.object(router.sys, "stdin", mock.Mock(isatty=lambda: False)), \
                 mock.patch.object(router.subprocess, "call", return_value=0), \
                 mock.patch.object(router.model_router, "fetch_deepseek_balance") as fetch, \
                 contextlib.redirect_stderr(stderr):
             self.assertEqual(router.run_codex_deepseek(["exec", "hi"]), 0)
         fetch.assert_not_called()
         self.assertNotIn("USD", stderr.getvalue())
+
+    def test_usage_limit_fallback_resumes_the_same_session_by_id(self):
+        """Validates: REQ-CTX-001 — y 승인 시 방금 끝난 OpenAI 세션을 id로 이어간다."""
+        seen = []
+
+        def run_pty(argv, env, watch):
+            seen.append(argv)
+            if len(seen) == 1:
+                return 0, "usage_limit", "You've hit your usage limit."
+            return 0, None, ""
+
+        with mock.patch.object(router, "find_recent_session_id",
+                               return_value="01a0bd17-64da-7b41-8a64-1ce221447f35"), \
+                self.session("openai", run_pty, self.low_cache) as stderr:
+            router.run_codex(["--help"])
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(seen[1][1:3], ["resume", "01a0bd17-64da-7b41-8a64-1ce221447f35"])
+        self.assertNotIn("--last", seen[1])
+
+    def test_usage_limit_fallback_opens_the_picker_when_no_session_id_is_found(self):
+        seen = []
+
+        def run_pty(argv, env, watch):
+            seen.append(argv)
+            if len(seen) == 1:
+                return 0, "usage_limit", "You've hit your usage limit."
+            return 0, None, ""
+
+        with mock.patch.object(router, "find_recent_session_id", return_value=None), \
+                self.session("openai", run_pty, self.low_cache) as stderr:
+            router.run_codex(["--help"])
+        self.assertEqual(seen[1][1], "resume")
+        self.assertNotIn("--last", seen[1])
+        self.assertIn("세션", stderr.getvalue())
+
+
+class FallbackResumeTests(unittest.TestCase):
+    """Validates: REQ-CTX-001 — fallback은 `resume --last` 대신 실제 session id를 쓴다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.sessions = self.dir / "sessions"
+        self.sessions.mkdir(parents=True)
+        patches = [
+            mock.patch.object(router, "SESSIONS_DIR", self.sessions),
+            mock.patch.object(router, "ensure_dirs"),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def rollout(self, name, session_id, cwd, provider="openai",
+                originator="codex-tui", mtime=None):
+        path = self.sessions / name
+        record = json.dumps({"type": "session_meta", "payload": {
+            "session_id": session_id, "cwd": cwd, "originator": originator,
+            "model_provider": provider}})
+        path.write_text(record + "\n", encoding="utf-8")
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def test_deepseek_args_resumes_an_explicit_session_id(self):
+        args = router.deepseek_args(["--yolo"], resume=True,
+                                    session_id="01a0bd17-64da-7b41-8a64-1ce221447f35")
+        self.assertEqual(args[:4], ["resume", "01a0bd17-64da-7b41-8a64-1ce221447f35",
+                                    "--profile", "deepseek"])
+
+    def test_resume_without_a_session_id_opens_the_picker_not_last(self):
+        args = router.deepseek_args(["--yolo"], resume=True)
+        self.assertEqual(args[:2], ["resume", "--profile"])
+        self.assertNotIn("--last", args)
+
+    def test_find_recent_session_id_selects_the_matching_openai_session(self):
+        started = router.now() - dt.timedelta(minutes=1)
+        cwd = str(pathlib.Path.cwd())
+        self.rollout("old.jsonl", "too-old", cwd, mtime=started.timestamp() - 10)
+        self.rollout("deepseek.jsonl", "wrong-provider", cwd, provider="deepseek",
+                     mtime=started.timestamp() + 10)
+        self.rollout("elsewhere.jsonl", "wrong-cwd", "/tmp/elsewhere",
+                     mtime=started.timestamp() + 20)
+        self.rollout("exec.jsonl", "non-tui", cwd, originator="codex-exec",
+                     mtime=started.timestamp() + 30)
+        self.rollout("target.jsonl", "the-session", cwd, mtime=started.timestamp() + 40)
+        self.assertEqual(router.find_recent_session_id(started, cwd=cwd), "the-session")
+
+    def test_find_recent_session_id_normalizes_unicode_cwd(self):
+        started = router.now() - dt.timedelta(minutes=1)
+        nfc = unicodedata.normalize("NFC", "자동화")
+        nfd = unicodedata.normalize("NFD", "자동화")
+        self.assertNotEqual(nfc, nfd)
+        self.rollout("unicode.jsonl", "unicode-session",
+                     f"/Users/hongmin/Desktop/{nfc}/codex-provider-router",
+                     mtime=started.timestamp() + 1)
+        cwd_nfd = f"/Users/hongmin/Desktop/{nfd}/codex-provider-router"
+        self.assertEqual(router.find_recent_session_id(started, cwd=cwd_nfd),
+                         "unicode-session")
+
+
+def token_count_line(input_tokens, cached_tokens, output_tokens):
+    return json.dumps({
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "last_token_usage": {
+                    "input_tokens": input_tokens,
+                    "cached_input_tokens": cached_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                }
+            },
+        },
+    })
+
+
+class CostLimitTests(unittest.TestCase):
+    """REQ-COST-001: 설정한 한도가 실제로 실행을 막는지 확인한다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.sessions = self.dir / "sessions" / "2026" / "09" / "19"
+        self.sessions.mkdir(parents=True)
+        self.spend = self.dir / "spend.jsonl"
+        patches = [
+            mock.patch.object(router, "SESSIONS_DIR", self.dir / "sessions"),
+            mock.patch.object(router, "SPEND_LOG", self.spend),
+            mock.patch.object(router, "ensure_dirs"),
+            mock.patch.object(router, "model_prices",
+                              return_value={"deepseek-flash": (0.14, 0.0028, 0.28)}),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def rollout(self, name, lines):
+        path = self.sessions / name
+        path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        return path
+
+    def test_a_zero_limit_means_no_limit(self):
+        self.assertIsNone(router._positive_limit({"daily_limit_usd": 0}, "daily_limit_usd", 25.0))
+        self.assertEqual(router._positive_limit({"daily_limit_usd": 12.5}, "daily_limit_usd", 25.0), 12.5)
+        self.assertEqual(router._positive_limit({}, "daily_limit_usd", 25.0), 25.0)
+
+    def test_a_session_delta_is_priced_from_the_rollout(self):
+        self.rollout("rollout-a.jsonl", [
+            '{"type":"session_meta","payload":{"session_id":"a"}}',
+            token_count_line(1_000_000, 500_000, 1_000_000),
+        ])
+        record = router.record_session_spend("deepseek", "deepseek-flash", {})
+        self.assertIsNotNone(record)
+        self.assertEqual(record["input_tokens"], 1_000_000)
+        self.assertEqual(record["cached_input_tokens"], 500_000)
+        self.assertEqual(record["output_tokens"], 1_000_000)
+        expected = (500_000 * 0.14 + 500_000 * 0.0028 + 1_000_000 * 0.28) / 1_000_000
+        self.assertAlmostEqual(record["cost_usd"], expected, places=9)
+        self.assertEqual(len(self.spend.read_text().splitlines()), 1)
+
+    def test_a_resumed_session_counts_only_the_new_turns(self):
+        path = self.rollout("rollout-b.jsonl", [
+            '{"type":"session_meta","payload":{"session_id":"b"}}',
+            token_count_line(100, 0, 10),
+        ])
+        snapshot = {str(path): path.stat().st_size}
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(token_count_line(50, 0, 5) + "\n")
+            handle.write(token_count_line(20, 0, 2) + "\n")
+        usage = router.rollout_usage_since(snapshot)
+        self.assertEqual(usage["turns"], 2)
+        self.assertEqual(usage["input"], 70)
+        self.assertEqual(usage["output"], 7)
+
+    def test_an_unknown_price_is_recorded_but_not_costed(self):
+        self.rollout("rollout-c.jsonl", [token_count_line(10, 0, 5)])
+        record = router.record_session_spend("deepseek", "unknown-model", {})
+        self.assertIsNone(record["cost_usd"])
+        self.assertEqual(router.estimate_cost("unknown-model", 10, 0, 5), None)
+
+    def test_a_reached_cost_limit_blocks_a_deepseek_run(self):
+        totals = {"today": 25.5, "month": 30.0, "records": 1, "unpriced": 0,
+                  "sessions": 1, "token_sessions": 1}
+        with mock.patch.object(router, "spend_totals", return_value=totals), \
+                mock.patch.object(router, "cost_limits",
+                                  return_value={"daily": 25.0, "monthly": 100.0}), \
+                mock.patch.object(router, "fallback_time_limit_minutes", return_value=None):
+            self.assertIn("일일 비용 한도", router.limit_block("deepseek"))
+            self.assertIsNone(router.limit_block("openai"))
+
+    def test_a_reached_monthly_limit_blocks_a_deepseek_run(self):
+        totals = {"today": 1.0, "month": 100.5, "records": 1, "unpriced": 0,
+                  "sessions": 1, "token_sessions": 1}
+        with mock.patch.object(router, "spend_totals", return_value=totals), \
+                mock.patch.object(router, "cost_limits",
+                                  return_value={"daily": 25.0, "monthly": 100.0}), \
+                mock.patch.object(router, "fallback_time_limit_minutes", return_value=None):
+            self.assertIn("월간 비용 한도", router.limit_block("deepseek"))
+            self.assertIsNone(router.limit_block("openai"))
+
+    def test_a_long_fallback_blocks_a_deepseek_run(self):
+        started = router.iso(router.now() - dt.timedelta(hours=9))
+        with mock.patch.object(router, "spend_totals",
+                               return_value={"today": 0.0, "month": 0.0, "records": 0,
+                                             "unpriced": 0, "sessions": 0, "token_sessions": 0}), \
+                mock.patch.object(router, "cost_limits",
+                                  return_value={"daily": None, "monthly": None}), \
+                mock.patch.object(router, "fallback_time_limit_minutes", return_value=480.0):
+            reason = router.limit_block("deepseek", {"state": "OPENAI_COOLDOWN",
+                                                     "cooldown_started_at": started})
+            self.assertIn("최대 시간", reason)
+            # 한도 없는 설정이면 같은 상태에서도 막지 않는다.
+            with mock.patch.object(router, "fallback_time_limit_minutes", return_value=None):
+                self.assertIsNone(router.limit_block("deepseek", {"state": "OPENAI_COOLDOWN",
+                                                                  "cooldown_started_at": started}))
+
+    def test_a_blocked_run_never_forks_a_session(self):
+        with mock.patch.object(router, "ensure_dirs"), \
+                mock.patch.object(router, "check_model_catalog", return_value=("skipped", [])), \
+                mock.patch.object(router, "select_provider", return_value="deepseek"), \
+                mock.patch.object(router, "limit_block", return_value="일일 비용 한도 테스트"), \
+                mock.patch.object(router.sys, "stdin", mock.Mock(isatty=lambda: True)), \
+                mock.patch.object(router, "run_pty") as pty, \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(router.run_codex(["--help"]), router.EX_LIMIT)
+        pty.assert_not_called()
+        self.assertIn("한도 때문에 실행을 시작하지 않았습니다", stderr.getvalue())
 
 
 if __name__ == "__main__": unittest.main()

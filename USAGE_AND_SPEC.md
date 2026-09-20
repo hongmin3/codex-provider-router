@@ -301,7 +301,7 @@ DeepSeek failure
       └─ git-diff.txt
 ```
 
-대화, 사용자 요청, tool call, 명령 결과, TODO는 Codex persisted thread에 보존되며 DeepSeek 전환 시 `resume --last`로 재개한다.
+대화, 사용자 요청, tool call, 명령 결과, TODO는 Codex persisted thread에 보존되며 DeepSeek 전환 시 방금 끝난 OpenAI 세션의 id로 `resume <session_id>` 재개한다. 세션 id를 식별하지 못하면 resume picker에서 사용자가 직접 선택한다.
 
 ## 9. 보안
 
@@ -336,6 +336,7 @@ Key 설정 시 입력은 화면에 표시되지 않고 두 번 입력해 일치 
    ├─ codex_router.py
    ├─ deepseek-models.json
    ├─ state.json
+   ├─ spend.jsonl                # 세션별 token·환산 비용 (prompt 미포함)
    ├─ logs/
    ├─ fallback-state/
    └─ uninstall.sh
@@ -391,9 +392,17 @@ API Key, access token, session token, password, 원본 오류 본문은 기록�
 
 - fallback 시작 시 provider, model, reasoning을 터미널에 표시한다.
 - 세션 시작·종료·실패를 로그한다.
-- `daily_limit_usd`, `monthly_limit_usd`, `max_fallback_minutes`를 config에서 관리한다.
+- `daily_limit_usd`, `monthly_limit_usd`, `max_fallback_minutes`를 config에서 관리하고,
+  값을 넘으면 DeepSeek 실행을 시작하지 않는다(종료 코드 75, REQ-COST-001). 0 이하는
+  한도 없음이다.
+- 비용은 Codex rollout(`~/.codex/sessions/**/rollout-*.jsonl`)에서 세션 전후 차이만 읽어
+  `models.toml` 단가로 환산하고 `~/.codex/router/spend.jsonl`에 기록한다. OpenAI(ChatGPT
+  로그인)는 정액제라 비용 한도 계산에서 제외한다.
+- `codex-router cost [--json]`이 오늘·이번 달 누적, 한도, fallback 경과 시간, 그리고
+  비용 근거를 찾지 못한 기록 수(커버리지)를 보여 준다.
 - `low_balance_usd`(기본 1.0) 미만이면 DeepSeek 세션 시작 시 잔액 경고를 표시한다. `codex-router balance`로 현재 잔액을 확인한다.
-- 현재 Codex TUI가 wrapper에 안정적인 정형 token/cost event를 제공하지 않아 일간·월간 비용 hard-stop은 적용되지 않는다.
+- rollout은 token 수만 읽고 prompt·응답 내용은 읽지 않는다. 단가를 모르는 모델은
+  `cost_usd: null`로 기록하고 한도 계산에서 0으로 본다.
 
 ## 13. 기존 Codex 보존
 
@@ -450,9 +459,9 @@ Tests
 
 ## 16. 현재 제한사항
 
-1. Codex CLI 0.154.0에는 interactive provider hot-swap API가 없어 persisted thread의 `resume --last`로 대체한다.
+1. Codex CLI에는 interactive provider hot-swap API가 없어 persisted thread를 `resume <session_id>`로 재개한다.
 2. Usage-limit 감지는 interactive TTY에 표시된 문구를 기준으로 하므로 서버 문구가 바뀌면 패턴 갱신이 필요하다.
-3. `resume --last`를 사용하므로 여러 Codex 세션을 동시에 운영하는 경우 마지막 thread 선택에 주의한다.
+3. 같은 작업 디렉터리에서 여러 Codex 세션을 동시에 운영하면 전환 시 가장 최근에 갱신된 OpenAI 세션으로 이어진다. 세션 id를 식별하지 못하면 picker에서 직접 선택한다.
 4. Custom provider config에 Codex connect timeout을 별도로 단축하는 공식 필드가 없어 network failure의 최종 종료까지 시간이 걸릴 수 있다.
 5. DeepSeek도 사용할 수 없으면 제3 provider로 전환하지 않고 이유와 대응 방법을 표시한 후 종료한다.
 6. 작업 파일, Codex thread, checkpoint는 오류 발생으로 삭제되지 않는다.
@@ -468,6 +477,7 @@ Router가 `forkpty()`로 Codex를 실행할 때 실제 터미널의 rows/columns
 | 평소 Codex | `codex --yolo` |
 | OpenAI 모델 | Codex TUI의 `/model` |
 | 상태 | `codex-router status` |
+| 비용·한도 | `codex-router cost`, `codex-router cost --json` |
 | DeepSeek 잔액 | `codex-router balance`, `ai balance` |
 | 잔액 JSON | `codex-router balance --json` |
 | 잔액 경고 기준 | `codex-router balance threshold`, `codex-router balance threshold 2.5` |
@@ -576,6 +586,7 @@ ai
 ~/.codex/router/
 ├─ provider-status.json # Provider 상태 cache
 ├─ model-failures.json  # capability failure 횟수
+├─ spend.jsonl          # 세션별 token·환산 비용 (한도 판정용)
 └─ logs/
    └─ model-router-usage.jsonl
 ```

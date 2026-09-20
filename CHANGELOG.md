@@ -19,9 +19,26 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Added
 
+- REQ-COST-001: 비용·시간 한도 실제 강제. DeepSeek 세션 전에 `daily_limit_usd`,
+  `monthly_limit_usd`, `max_fallback_minutes`를 확인하고 한도를 넘으면 실행하지 않고 종료
+  코드 75로 끝낸다.
+- REQ-COST-001: 비용 원장 `~/.codex/router/spend.jsonl`과 `codex-router cost [--json]` 명령.
+  Codex rollout에서 세션 전후 token 차이만 읽어 `models.toml` 단가로 환산한다(`resume` 대응).
+- TEST-COST-002 (`tests/test_router.py` `CostLimitTests`) 8개 테스트.
+
 ### Changed
 
+- 한도를 0 이하로 두면 그 한도를 쓰지 않는다. OpenAI(ChatGPT 로그인)는 정액제라 비용 한도
+  계산에서 제외하고, 그 사실을 `cost` 출력에 표시한다.
+- SPEC.md: Project Version 1.0.0, Owner 역할명 지정. `daily_limit_usd`류가 "참고값"이라는
+  미확정 항목을 닫고 REQ-COST-001로 확정.
+
 ### Fixed
+
+- REQ-CTX-001: usage limit에서 `y`로 전환할 때 `resume --last`가 방금 종료된 OpenAI
+  세션 대신 다른 thread를 열던 문제 수정. 전환 시 방금 끝난 세션의 id를 rollout 메타에서
+  찾아 `resume <session_id>`로 이어가고, id를 찾지 못하면 안내와 함께 picker를 연다.
+  `--last` 사용 제거. TEST-CTX-001 회귀 테스트 6개.
 
 ### Removed
 

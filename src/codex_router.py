@@ -20,6 +20,7 @@ import termios
 import time
 import tty
 import tomllib
+import unicodedata
 import urllib.error
 import urllib.request
 
@@ -108,6 +109,405 @@ def low_balance_usd() -> float:
     except (KeyError, TypeError, ValueError):
         return model_router.LOW_BALANCE_USD
     return value if value >= 0 else model_router.LOW_BALANCE_USD
+
+
+# --- 비용·시간 한도 -------------------------------------------------------
+# 한도는 실제로 실행을 막는다. DeepSeek은 token당 과금이라 여기서 계산한 비용이 실제
+# 청구액이고, OpenAI(ChatGPT 로그인)는 정액제라 한도 계산에서 제외한다.
+#
+# 세션 사용량은 Codex가 남기는 rollout(`~/.codex/sessions/**/rollout-*.jsonl`)에서 읽는다.
+# 세션 전에 파일 크기를 스냅샷하고, 끝난 뒤 늘어난 부분의 `last_token_usage`만 합산하므로
+# `resume`으로 이어진 세션도 이번 실행분만 계산된다.
+SPEND_LOG = BASE / "spend.jsonl"
+SESSIONS_DIR = pathlib.Path.home() / ".codex" / "sessions"
+ROLLOUT_WINDOW_HOURS = 6.0
+EX_LIMIT = 75
+
+
+def _positive_limit(section: object, key: str, default: float) -> float | None:
+    """설정값을 한도로 읽는다. 0 이하는 '한도 없음'을 뜻한다."""
+    value = default
+    if isinstance(section, dict):
+        try:
+            value = float(section.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+    return value if value > 0 else None
+
+
+def cost_limits() -> dict:
+    section = config().get("cost", {})
+    return {
+        "daily": _positive_limit(section, "daily_limit_usd", 25.0),
+        "monthly": _positive_limit(section, "monthly_limit_usd", 100.0),
+    }
+
+
+def fallback_time_limit_minutes() -> float | None:
+    return _positive_limit(config().get("routing", {}), "max_fallback_minutes", 480.0)
+
+
+def model_prices() -> dict[str, tuple[float, float, float]]:
+    prices: dict[str, tuple[float, float, float]] = {}
+    try:
+        models = model_router.load_models()
+    except (OSError, ValueError, KeyError, tomllib.TOMLDecodeError):
+        return prices
+    for model in models.values():
+        if model.input_price is None and model.output_price is None:
+            continue
+        cached = model.cached_input_price
+        prices[model.model_id] = (
+            float(model.input_price or 0.0),
+            float(cached if cached is not None else model.input_price or 0.0),
+            float(model.output_price or 0.0),
+        )
+    return prices
+
+
+def estimate_cost(model_id: str | None, input_tokens: int, cached_tokens: int,
+                  output_tokens: int) -> float | None:
+    """token 사용량을 models.toml 단가로 환산한다. 단가를 모르면 None."""
+    if not model_id:
+        return None
+    prices = model_prices().get(model_id)
+    if prices is None:
+        return None
+    input_price, cached_price, output_price = prices
+    cached = max(min(int(cached_tokens or 0), int(input_tokens or 0)), 0)
+    fresh = max(int(input_tokens or 0) - cached, 0)
+    return (fresh * input_price + cached * cached_price +
+            int(output_tokens or 0) * output_price) / 1_000_000
+
+
+def _rollout_paths() -> list[pathlib.Path]:
+    try:
+        return sorted(SESSIONS_DIR.rglob("*.jsonl"))
+    except OSError:
+        return []
+
+
+def _rollout_meta(path: pathlib.Path) -> dict | None:
+    """rollout 파일의 session_meta 필드만 읽는다. 대화·지시문·자격증명은 읽지 않는다."""
+    try:
+        handle = path.open(errors="replace")
+    except OSError:
+        return None
+    with handle:
+        for line in handle:
+            line = line.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(record, dict) or record.get("type") != "session_meta":
+                continue
+            payload = record.get("payload")
+            if not isinstance(payload, dict):
+                return None
+            return {
+                "session_id": payload.get("session_id"),
+                "cwd": payload.get("cwd"),
+                "originator": payload.get("originator"),
+                "model_provider": payload.get("model_provider"),
+            }
+    return None
+
+
+def find_recent_session_id(started_after: dt.datetime, provider: str = "openai",
+                           cwd: str | pathlib.Path | None = None,
+                           originator: str = "codex-tui") -> str | None:
+    """방금 시작된 세션의 session id를 rollout 메타에서 찾는다.
+
+    `resume --last`는 SIGINT로 끝난 세션을 "기록된 마지막 세션"으로 보지 않아 다른
+    thread를 열 수 있다. 대신 시작 시각 이후에 쓰인 rollout 중 provider·cwd·
+    originator가 맞는 최신 세션의 id를 돌려주고, resume이 그 id를 직접 받는다.
+    """
+    cutoff = started_after.timestamp()
+    cwd_key = unicodedata.normalize("NFC", str(cwd)) if cwd is not None else None
+    best: tuple[float, str] | None = None
+    for path in _rollout_paths():
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_mtime < cutoff:
+            continue
+        meta = _rollout_meta(path)
+        if not meta or not meta.get("session_id"):
+            continue
+        if meta.get("model_provider") != provider or meta.get("originator") != originator:
+            continue
+        if cwd_key is not None and unicodedata.normalize("NFC", str(meta.get("cwd") or "")) != cwd_key:
+            continue
+        if best is None or stat.st_mtime > best[0]:
+            best = (stat.st_mtime, str(meta["session_id"]))
+    return best[1] if best else None
+
+
+def rollout_snapshot() -> dict[str, int]:
+    """최근 사용한 rollout 파일의 현재 크기. 세션 전후 사용량 차이를 재는 기준점."""
+    cutoff = time.time() - ROLLOUT_WINDOW_HOURS * 3600
+    snapshot: dict[str, int] = {}
+    for path in _rollout_paths():
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_mtime >= cutoff:
+            snapshot[str(path)] = stat.st_size
+    return snapshot
+
+
+def _sum_token_events(data: bytes) -> dict[str, int]:
+    totals = {"input": 0, "cached": 0, "output": 0, "turns": 0}
+    for line in data.decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        payload = record.get("payload") if isinstance(record, dict) else None
+        if not isinstance(payload, dict) or payload.get("type") != "token_count":
+            continue
+        info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+        usage = info.get("last_token_usage") or info.get("total_token_usage")
+        if not isinstance(usage, dict):
+            continue
+        for name, key in (("input", "input_tokens"), ("cached", "cached_input_tokens"),
+                          ("output", "output_tokens")):
+            try:
+                totals[name] += int(usage.get(key, 0) or 0)
+            except (TypeError, ValueError):
+                continue
+        totals["turns"] += 1
+    return totals
+
+
+def rollout_usage_since(snapshot: dict[str, int]) -> dict[str, int]:
+    """스냅샷 이후 늘어난 token_count만 합산한다."""
+    totals = {"input": 0, "cached": 0, "output": 0, "turns": 0, "files": 0}
+    cutoff = time.time() - ROLLOUT_WINDOW_HOURS * 3600
+    for path in _rollout_paths():
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_mtime < cutoff:
+            continue
+        start = snapshot.get(str(path), 0)
+        if stat.st_size <= start:
+            continue
+        try:
+            with path.open("rb") as handle:
+                handle.seek(start)
+                data = handle.read()
+        except OSError:
+            continue
+        counted = _sum_token_events(data)
+        if counted["turns"] == 0:
+            continue
+        totals["files"] += 1
+        for name in ("input", "cached", "output", "turns"):
+            totals[name] += counted[name]
+    return totals
+
+
+def spend_records() -> list[dict]:
+    """비용 원장. router 자체 원장 + model_router 사용 기록을 함께 본다."""
+    records: list[dict] = []
+    for path in (SPEND_LOG, model_router.USAGE_LOG):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(record, dict):
+                records.append(record)
+    return records
+
+
+def _record_cost(record: dict) -> float:
+    total = 0.0
+    if "cost_usd" in record:
+        try:
+            return float(record.get("cost_usd") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+    for key in ("task_cost", "routing_cost"):
+        try:
+            total += float(record.get(key) or 0.0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _record_time(record: dict) -> dt.datetime | None:
+    for key in ("timestamp", "recorded_at"):
+        value = record.get(key)
+        if not value:
+            continue
+        try:
+            when = dt.datetime.fromisoformat(str(value))
+        except ValueError:
+            continue
+        return when if when.tzinfo else when.replace(tzinfo=dt.timezone.utc)
+    return None
+
+
+def spend_totals(now_value: dt.datetime | None = None) -> dict:
+    """오늘·이번 달 비용과, 비용 근거를 찾지 못한 기록 수(커버리지)."""
+    moment = (now_value or now()).astimezone()
+    totals = {"today": 0.0, "month": 0.0, "records": 0, "unpriced": 0,
+              "sessions": 0, "token_sessions": 0}
+    for record in spend_records():
+        when = _record_time(record)
+        if when is None:
+            continue
+        totals["records"] += 1
+        if "cost_usd" in record:
+            totals["sessions"] += 1
+        has_tokens = (record.get("input_tokens") is not None or
+                      record.get("task_input_tokens") is not None)
+        has_cost = (("cost_usd" in record and record.get("cost_usd") is not None) or
+                    record.get("task_cost") is not None)
+        if has_tokens:
+            totals["token_sessions"] += 1
+        if not has_tokens and not has_cost:
+            totals["unpriced"] += 1
+        cost = _record_cost(record)
+        local = when.astimezone()
+        if local.date() == moment.date():
+            totals["today"] += cost
+        if (local.year, local.month) == (moment.year, moment.month):
+            totals["month"] += cost
+    return totals
+
+
+def record_session_spend(provider: str, model_id: str, snapshot: dict[str, int],
+                         output: str = "") -> dict | None:
+    """세션 사용량을 비용 원장에 남긴다. 단가를 모르면 cost_usd는 null이다."""
+    usage = rollout_usage_since(snapshot)
+    if usage["turns"] == 0:
+        input_tokens, output_tokens = parse_task_tokens(output)
+        if input_tokens is None:
+            return None
+        usage = {"input": input_tokens, "cached": 0, "output": output_tokens or 0,
+                 "turns": 1, "files": 0}
+    cost = estimate_cost(model_id, usage["input"], usage["cached"], usage["output"])
+    record = {
+        "timestamp": iso(), "provider": provider, "model": model_id,
+        "input_tokens": usage["input"], "cached_input_tokens": usage["cached"],
+        "output_tokens": usage["output"], "turns": usage["turns"],
+        "rollout_files": usage["files"], "cost_usd": cost,
+    }
+    ensure_dirs()
+    with SPEND_LOG.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    os.chmod(SPEND_LOG, 0o600)
+    return record
+
+
+def fallback_elapsed_minutes(state: dict | None = None,
+                             now_value: dt.datetime | None = None) -> float | None:
+    """OpenAI 한도 감지 후 DeepSeek로 버틴 시간. 기준 시각이 없으면 None."""
+    state = state if state is not None else load_state()
+    started = state.get("cooldown_started_at")
+    if not started:
+        return None
+    try:
+        when = dt.datetime.fromisoformat(str(started))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.timezone.utc)
+    moment = now_value or now()
+    return (moment - when).total_seconds() / 60
+
+
+def limit_block(provider: str, state: dict | None = None) -> str | None:
+    """실행을 막아야 하면 이유 문장을, 아니면 None을 돌려준다."""
+    if provider != "deepseek":
+        return None
+    limits = cost_limits()
+    totals = spend_totals()
+    if limits["daily"] is not None and totals["today"] >= limits["daily"]:
+        return (f"일일 비용 한도 USD {limits['daily']:.2f}에 도달했습니다"
+                f"(오늘 USD {totals['today']:.2f}).")
+    if limits["monthly"] is not None and totals["month"] >= limits["monthly"]:
+        return (f"월간 비용 한도 USD {limits['monthly']:.2f}에 도달했습니다"
+                f"(이번 달 USD {totals['month']:.2f}).")
+    cap = fallback_time_limit_minutes()
+    elapsed = fallback_elapsed_minutes(state)
+    if cap is not None and elapsed is not None and elapsed >= cap:
+        return (f"DeepSeek fallback이 최대 시간 {cap:.0f}분을 넘었습니다"
+                f"(경과 {elapsed:.0f}분).")
+    return None
+
+
+def block_notice(reason: str) -> str:
+    return (
+        f"\n[Codex Router] {reason}\n"
+        "[Codex Router] 한도 때문에 실행을 시작하지 않았습니다.\n"
+        "[Codex Router] 한도 조정: ~/.config/codex-router/config.toml "
+        "([cost] daily_limit_usd·monthly_limit_usd, [routing] max_fallback_minutes, 0은 한도 없음)\n"
+        "[Codex Router] 누적 확인: `codex-router cost` · fallback 상태 초기화: `codex-router reset`\n"
+    )
+
+
+def enforce_limit(provider: str) -> int | None:
+    """한도에 걸리면 안내를 출력하고 종료 코드를 돌려준다."""
+    reason = limit_block(provider)
+    if not reason:
+        return None
+    print(block_notice(reason), file=sys.stderr)
+    log("blocked", provider=provider, reason=reason)
+    return EX_LIMIT
+
+
+def cost_command(args: list[str]) -> int:
+    if [arg for arg in args if arg != "--json"]:
+        print("Usage: codex-router cost [--json]", file=sys.stderr)
+        return 2
+    limits, totals = cost_limits(), spend_totals()
+    cap = fallback_time_limit_minutes()
+    elapsed = fallback_elapsed_minutes()
+    payload = {
+        "limits": {"daily_usd": limits["daily"], "monthly_usd": limits["monthly"],
+                   "max_fallback_minutes": cap},
+        "spend": {"today_usd": round(totals["today"], 4),
+                  "month_usd": round(totals["month"], 4)},
+        "coverage": {"records": totals["records"], "sessions": totals["sessions"],
+                     "sessions_with_tokens": totals["token_sessions"],
+                     "sessions_without_price": totals["unpriced"]},
+        "fallback_elapsed_minutes": None if elapsed is None else round(elapsed, 1),
+        "metered_provider": "deepseek",
+    }
+    if "--json" in args:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+    daily = "unlimited" if limits["daily"] is None else f"USD {limits['daily']:.2f}"
+    monthly = "unlimited" if limits["monthly"] is None else f"USD {limits['monthly']:.2f}"
+    fallback = "unlimited" if cap is None else f"{cap:.0f} min"
+    print(f"Metered provider: DeepSeek (OpenAI ChatGPT login is flat-rate and not counted)")
+    print(f"Today: USD {totals['today']:.2f} / {daily}")
+    print(f"This month: USD {totals['month']:.2f} / {monthly}")
+    print(f"Fallback elapsed: " +
+          ("none" if elapsed is None else f"{elapsed:.0f} min") + f" / {fallback}")
+    print(f"Records: {totals['records']} · sessions: {totals['sessions']} · "
+          f"with tokens: {totals['token_sessions']} · without price: {totals['unpriced']}")
+    return 0
 
 
 def catalog_models() -> list[str]:
@@ -383,7 +783,8 @@ def select_provider() -> str:
     return "openai" if due and probe_openai() else "deepseek"
 
 
-def deepseek_args(args: list[str], resume: bool = False) -> list[str]:
+def deepseek_args(args: list[str], resume: bool = False,
+                  session_id: str | None = None) -> list[str]:
     filtered, skip = [], False
     for index, arg in enumerate(args):
         if arg == "--":
@@ -398,7 +799,10 @@ def deepseek_args(args: list[str], resume: bool = False) -> list[str]:
         if arg.startswith(("--profile=", "--model=")):
             continue
         filtered.append(arg)
-    prefix = ["resume", "--last"] if resume else []
+    if resume:
+        prefix = ["resume", session_id] if session_id else ["resume"]
+    else:
+        prefix = []
     return [*prefix, "--profile", "deepseek", "--model", fallback_model(),
             "-c", f'model_reasoning_effort="{reasoning_effort()}"', *filtered]
 
@@ -424,6 +828,9 @@ def run_codex_deepseek(args: list[str]) -> int:
     """
     ensure_dirs()
     args = remove_leading_codex_token(args)
+    blocked = enforce_limit("deepseek")
+    if blocked is not None:
+        return blocked
     key = keychain_key()
     if not key:
         print("[Codex Router] DeepSeek key missing. Run: codex-router key set", file=sys.stderr)
@@ -432,7 +839,11 @@ def run_codex_deepseek(args: list[str]) -> int:
     if not sys.stdin.isatty():
         env = os.environ.copy()
         env.update(DEEPSEEK_API_KEY=key, CODEX_ROUTER_BYPASS="1")
-        return subprocess.call([REAL_CODEX, *deepseek_args(args)], env=env)
+        snapshot = rollout_snapshot()
+        code = subprocess.call([REAL_CODEX, *deepseek_args(args)], env=env)
+        record_session_spend("deepseek", fallback_model(), snapshot)
+        log("session_spend", provider="deepseek", model=fallback_model(), exit_code=code)
+        return code
     os.environ["FORCE_DEEPSEEK"] = "1"
     return run_codex(args)
 
@@ -549,6 +960,9 @@ def run_codex(args: list[str]) -> int:
     check_model_catalog(force=False, announce=True)
     provider = select_provider()
     forced = os.environ.get("FORCE_DEEPSEEK") == "1"
+    blocked = enforce_limit(provider)
+    if blocked is not None:
+        return blocked
     if provider == "deepseek" and not forced and not confirm_fallback("이전에 OpenAI 사용 한도가 감지되었습니다"):
         provider = "openai"
     if provider == "deepseek" and not keychain_key():
@@ -572,7 +986,12 @@ def run_codex(args: list[str]) -> int:
         argv = [REAL_CODEX, *args]
         print("[Codex Router] Provider: OpenAI | ChatGPT login", file=sys.stderr)
     log("session_start", provider=provider, model=fallback_model() if provider == "deepseek" else "configured-default", reasoning=reasoning_effort() if provider == "deepseek" else None)
+    snapshot = rollout_snapshot()
+    openai_started_at = now() if provider == "openai" else None
     code, detected, output_tail = run_pty(argv, env, provider == "openai")
+    if provider == "deepseek":
+        record_session_spend("deepseek", fallback_model(), snapshot, output_tail)
+        log("session_spend", provider="deepseek", model=fallback_model(), exit_code=code)
     fell_back = False
     if detected == "usage_limit":
         checkpoint(detected)
@@ -581,6 +1000,9 @@ def run_codex(args: list[str]) -> int:
             log("fallback_declined", reason="usage_limit")
         else:
             cooldown(detected, output_tail)
+            blocked = enforce_limit("deepseek")
+            if blocked is not None:
+                return blocked
             key = keychain_key()
             if not key:
                 print("\n[Codex Router] Usage limit detected; DeepSeek key is not configured. Run: codex-router key set", file=sys.stderr)
@@ -592,7 +1014,21 @@ def run_codex(args: list[str]) -> int:
             if notice:
                 print(f"[Codex Router] {notice}", file=sys.stderr)
             fell_back = True
-            code, _, output_tail = run_pty([REAL_CODEX, *deepseek_args(args, resume=True)], env, False)
+            snapshot = rollout_snapshot()
+            session_id = None
+            if openai_started_at is not None:
+                session_id = find_recent_session_id(openai_started_at, cwd=pathlib.Path.cwd())
+            if session_id:
+                print(f"\n[Codex Router] 방금 대화(세션 {session_id[:8]}…)를 DeepSeek로 이어갑니다.", file=sys.stderr)
+            else:
+                print("\n[Codex Router] 방금 끝난 OpenAI 세션 id를 찾지 못했습니다. "
+                      "세션 선택창에서 같은 대화를 선택해 주세요.", file=sys.stderr)
+            log("fallback_resume", provider="deepseek", session_id=session_id)
+            code, _, output_tail = run_pty(
+                [REAL_CODEX, *deepseek_args(args, resume=True, session_id=session_id)],
+                env, False)
+            record_session_spend("deepseek", fallback_model(), snapshot, output_tail)
+            log("session_spend", provider="deepseek", model=fallback_model(), exit_code=code)
             if code != 0:
                 report_deepseek_error(output_tail, code)
     elif provider == "deepseek" and code != 0:
@@ -673,6 +1109,10 @@ def _mark_runtime_failure(provider: str, detected: str | None, tail: str) -> str
 
 def execute_ai(prompt: str, selected: model_router.Model, effort: str,
                decision: model_router.Decision, statuses: dict) -> int:
+    if selected.provider == "deepseek":
+        blocked = enforce_limit("deepseek")
+        if blocked is not None:
+            return blocked
     code, detected, tail = _run_selected_model(prompt, selected, effort)
     provider_failure = (selected.provider == "openai" and detected == "usage_limit") or (
         selected.provider == "deepseek" and code != 0 and classify_deepseek_error(tail) != "unknown")
@@ -763,6 +1203,11 @@ def status() -> int:
     if isinstance(balance, dict):
         print(f"DeepSeek Balance: {balance.get('currency', 'USD')} {float(balance['total']):.2f} "
               f"(checked {entry.get('balance_checked_at', '-')})")
+    limits, totals = cost_limits(), spend_totals()
+    daily = "unlimited" if limits["daily"] is None else f"USD {limits['daily']:.2f}"
+    monthly = "unlimited" if limits["monthly"] is None else f"USD {limits['monthly']:.2f}"
+    print(f"DeepSeek Spend Today: USD {totals['today']:.2f} / {daily}\n"
+          f"DeepSeek Spend This Month: USD {totals['month']:.2f} / {monthly}")
     notice = low_balance_notice(entry)
     if notice:
         print(notice)
@@ -964,6 +1409,7 @@ def main() -> int:
     if args[:2] == ["key", "set"]: return set_key()
     if args[0] == "doctor": return doctor()
     if args[0] == "balance": return balance_command(args[1:])
+    if args[0] == "cost": return cost_command(args[1:])
     if args[0] == "model": return model_command(args[1] if len(args) > 1 else None)
     if args[0] == "models": return models_command(args[1] if len(args) > 1 else None)
     if args[0] == "reasoning": return reasoning_command(args[1] if len(args) > 1 else None)
@@ -977,7 +1423,7 @@ def main() -> int:
     if args[0] == "test" and len(args) == 2: return test(args[1])
     if args[0] == "uninstall":
         return subprocess.call([str(BASE / "uninstall.sh")])
-    print("Usage: codex-router {status|balance [--json]|balance threshold [AMOUNT]|deep|deepseek [CODEX_ARGS]|model [flash|pro|vision]|models [list|check|refresh]|reasoning [low|high|max]|doctor|logs|key set|test NAME|reset|uninstall}", file=sys.stderr); return 2
+    print("Usage: codex-router {status|cost [--json]|balance [--json]|balance threshold [AMOUNT]|deep|deepseek [CODEX_ARGS]|model [flash|pro|vision]|models [list|check|refresh]|reasoning [low|high|max]|doctor|logs|key set|test NAME|reset|uninstall}", file=sys.stderr); return 2
 
 
 if __name__ == "__main__":

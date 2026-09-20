@@ -5,10 +5,10 @@
 | 항목 | 값 |
 |---|---|
 | Document Version | 1.0.0 |
-| Project Version | (TBD) |
+| Project Version | 1.0.0 |
 | Last Updated | 2026-09-19 |
 | Status | active |
-| Owner | (TBD) |
+| Owner | Router 운영 담당자 (역할명) |
 
 이 문서는 `codex-provider-router`가 **어떻게 동작해야 하는가**를 정의하는 기준이다.
 코드가 현재 그렇게 동작한다는 사실은 사양이 아니다. 사양과 구현이 다르면 코드에 맞춰 이
@@ -83,6 +83,8 @@ Windows DPAPI 네 곳이다. 설치 후 실제 경로 배치는 `USAGE_AND_SPEC.
    (REQ-ROUTE-004).
 7. `deep` 계열 명령과 `FORCE_DEEPSEEK=1`은 1~6과 무관하게 DeepSeek로 직행한다
    (REQ-ROUTE-005).
+8. DeepSeek로 실행하기 전에 오늘·이번 달 누적 비용과 fallback 경과 시간을 확인하고, 한도를
+   넘었으면 실행하지 않고 이유와 조정 방법을 알린다(REQ-COST-001).
 
 상태 머신의 전이 표는 `USAGE_AND_SPEC.md` 5절에 있다.
 
@@ -244,15 +246,17 @@ provider가 바뀌어도 작업 맥락을 잃지 않는다.
   `git status`, `git diff`, 그리고 존재하는 `AGENTS.md`·`README.md`·`progress.md`를
   담는다.
 - git 명령 실패·timeout은 checkpoint 생성을 실패시키지 않고 실패 사실만 남긴다.
-- 대화·요청·tool call·명령 결과·TODO는 Codex persisted thread에 있으므로 복제하지 않고
-  같은 thread를 `resume --last`로 재개한다.
+- 대화·요청·tool call·명령 결과·TODO는 Codex persisted thread에 있으므로 복제하지 않고,
+  전환 시 방금 종료된 OpenAI 세션의 session id를 rollout 메타에서 찾아 같은 thread를
+  `resume <session_id>`로 재개한다. session id를 식별하지 못하면 resume picker에서
+  사용자가 직접 선택한다.
 - 오류가 났다는 이유로 작업 파일·Codex thread·checkpoint를 삭제하지 않는다.
 
 #### 관련 구현
 `src/codex_router.py`
 
 #### 관련 테스트
-(없음)
+TEST-CTX-001
 
 ### REQ-MODEL-001
 
@@ -368,6 +372,43 @@ TEST-ERR-001
 #### 관련 테스트
 TEST-AIROUTE-001
 
+### REQ-COST-001
+
+#### 목적
+설정에 적어 둔 비용·시간 한도가 표시용 값이 아니라 **실제 실행 차단**으로 동작한다.
+
+#### 동작
+- 한도는 `[cost] daily_limit_usd`, `[cost] monthly_limit_usd`,
+  `[routing] max_fallback_minutes` 세 가지다. **0 이하는 한도 없음**을 뜻한다.
+- 한도 계산 대상은 과금 provider인 DeepSeek이다. OpenAI(ChatGPT 로그인)는 정액제이므로
+  비용 한도에 넣지 않고, 그 사실을 `cost` 출력에 적는다.
+- 비용은 추정이 아니라 실제 token 사용량으로 계산한다. 세션 전에 Codex rollout 파일
+  (`~/.codex/sessions/**/rollout-*.jsonl`)의 크기를 기록하고, 세션 뒤 늘어난 부분의
+  `last_token_usage`만 합산해 `config/models.toml` 단가로 환산한다. `resume`으로 이어진
+  세션도 이번 실행분만 계산된다.
+- 세션 결과는 비용 원장(`~/.codex/router/spend.jsonl`)에 기록한다. `ai` 실행 기록
+  (`~/.codex/router/logs/model-router-usage.jsonl`)도 같은 계산에 포함한다.
+- DeepSeek 실행 직전에 오늘·이번 달 누적과 fallback 경과 시간을 확인한다. 한도에
+  도달했으면 **실행하지 않고** 종료 코드 `75`로 끝내며, 어느 한도인지·현재 누적·조정
+  방법·`codex-router cost` 안내를 출력한다.
+- fallback 경과 시간은 OpenAI 한도가 감지된 시각(`cooldown_started_at`)부터 잰다. 기준
+  시각이 없으면(예: `deep` 직접 실행) 시간 한도는 적용하지 않는다.
+- 차단 결정은 로그에 `blocked` 이벤트로 남긴다.
+- `codex-router cost [--json]`이 한도·오늘/이번 달 누적·fallback 경과·커버리지를 보여
+  준다. 커버리지는 "기록 수 / token이 있는 기록 수 / 비용 근거가 없는 기록 수"다.
+
+#### 예외 처리
+rollout 파일이나 원장 파일을 읽지 못하면 그 기록은 건너뛰고 계산을 계속한다. 단가를 모르는
+모델은 `cost_usd: null`로 기록하고 한도 계산에서 0으로 본다. 이 경우 `cost`의 "비용 근거가
+없는 기록" 수가 늘어나므로, 0으로 보이는 누적을 그대로 신뢰하지 않는다.
+
+#### 관련 구현
+`src/codex_router.py` (`cost_limits`, `rollout_usage_since`, `record_session_spend`,
+`spend_totals`, `limit_block`, `enforce_limit`, `cost_command`)
+
+#### 관련 테스트
+TEST-COST-002
+
 ## 6. 비기능 요구사항
 
 ### NFR-SEC-001
@@ -430,6 +471,8 @@ Router가 다루는 데이터는 (1) provider 상태와 probe 일정, (2) DeepSe
   (NFR-SEC-001, REQ-AIROUTE-001).
 - checkpoint는 작업 디렉터리별로 분리하고 사용자가 지우기 전까지 보존한다.
 - 로그는 월별 파일 최근 6개만 보존한다.
+- 비용 원장(`spend.jsonl`)은 세션별 token 수·환산 비용·시각만 담고 prompt나 응답 내용은
+  담지 않는다. 한도 판정을 위해 월 단위로 누적되며 자동 삭제하지 않는다.
 - 상태·cache 파일은 손상되었을 때 예외로 중단하지 않고 안전한 기본값으로 되돌린다
   (REQ-STATE-001, REQ-CATALOG-001).
 
@@ -444,6 +487,10 @@ Router가 다루는 데이터는 (1) provider 상태와 probe 일정, (2) DeepSe
 - API Key는 어떤 설정 파일에도 저장하지 않는다(NFR-SEC-001).
 - 설정 파일이 없어도 모든 항목은 코드의 기본값으로 동작해야 한다. 설정 파일은 기본값을
   덮어쓰기만 한다.
+- `[cost] daily_limit_usd`·`monthly_limit_usd`와 `[routing] max_fallback_minutes`는
+  실행을 막는 한도다(REQ-COST-001). 값을 0으로 두면 그 한도를 쓰지 않는다. 비용 한도는
+  과금 provider에만 적용하고, `max_fallback_minutes`는 OpenAI 한도 감지 후 자동 fallback
+  구간에만 적용한다.
 - 설정을 다시 쓸 때 template의 설명 주석을 보존한다(REQ-MODEL-001).
 - 환경 변수는 `DEEPSEEK_API_KEY`(Key 출처)와 `FORCE_DEEPSEEK`(그 실행 한 번의 강제 전환)
   둘만 사용자 인터페이스다. 그 외 내부 표시용 변수는 사용자 문서에 노출하지 않는다.
@@ -759,6 +806,50 @@ NFR-COST-001
 기본 설정에서는 분류기 호출이 0회이고, 켜더라도 고가 모델을 쓰지 않으며, 실행이 전역
 config를 변경하지 않고, 상태 갱신이 매 세션 반복되지 않는다.
 
+### TEST-COST-002
+
+#### 검증 대상
+REQ-COST-001
+
+#### 선행 조건
+Node가 아니라 Python `unittest`. 합성 rollout 파일과 임시 원장 경로를 쓴다. 실제
+`~/.codex/router` 상태는 건드리지 않는다.
+
+#### 절차
+`tests/test_router.py`의 `CostLimitTests`를 실행한다. 합성 rollout에 `token_count`
+이벤트를 넣어 세션 사용량을 계산하고, `last_token_usage`가 스냅샷 이후분만 합산되는지
+확인한다(`resume` 대응). 오늘·월간 한도와 fallback 경과 시간을 각각 넘긴 상태에서
+`limit_block`이 차단 사유를 돌려주는지, 한도를 0으로 두면 막지 않는지, 차단된 실행이
+PTY를 만들지 않고 종료 코드 75로 끝나는지 확인한다.
+
+#### Expected Result
+한도를 넘은 DeepSeek 실행은 시작되지 않고 사유가 출력된다. OpenAI 실행과 한도 0 설정은
+막지 않는다. 비용은 token 사용량 × `models.toml` 단가로 계산되고, 이어서 실행한 세션은
+이번 실행분만 기록된다. 단가를 모르는 모델은 `cost_usd: null`로 남는다.
+
+### TEST-CTX-001
+
+#### 검증 대상
+REQ-CTX-001
+
+#### 선행 조건
+임시 `SESSIONS_DIR`에 합성 rollout 파일을 쓰고, 실제 `~/.codex/router` 상태와
+`~/.codex/sessions`은 건드리지 않는다.
+
+#### 절차
+`tests/test_router.py`의 `FallbackResumeTests`와 `BalanceCommandTests`의
+`test_usage_limit_fallback_resumes_the_same_session_by_id`,
+`test_usage_limit_fallback_opens_the_picker_when_no_session_id_is_found`를 실행한다.
+usage limit 문구를 감지한 뒤 승인하면 두 번째 Codex 호출이 `resume --last`가 아니라
+방금 끝난 세션의 id를 받는지, id를 찾지 못하면 picker(`resume`에 id 없음)로 가고 안내가
+출력되는지 확인한다.
+
+#### Expected Result
+전환 argv에 `--last`가 없고, 식별된 session id가 `resume`의 위치 인자로 전달된다.
+session id 탐색은 provider(`openai`)·작업 디렉터리(Unicode 정규화 포함)·originator가
+일치하는 최신 rollout만 고르고, 시각 창 밖·다른 provider·다른 cwd·비 TUI 세션은
+무시된다. id가 없으면 사용자에게 알리고 picker를 연다.
+
 ## 12. 요구사항 추적성
 
 | Requirement | Implementation | Test | Status |
@@ -769,7 +860,7 @@ config를 변경하지 않고, 상태 갱신이 매 세션 반복되지 않는�
 | REQ-ROUTE-004 | `src/codex_router.py` | TEST-ROUTE-003 | verified |
 | REQ-ROUTE-005 | `src/codex_router.py` | TEST-ROUTE-004 | verified |
 | REQ-STATE-001 | `src/codex_router.py` | TEST-STATE-001 | verified |
-| REQ-CTX-001 | `src/codex_router.py` | (없음) | implemented |
+| REQ-CTX-001 | `src/codex_router.py` | TEST-CTX-001 | implemented |
 | REQ-MODEL-001 | `src/codex_router.py` | TEST-MODEL-001 | verified |
 | REQ-CATALOG-001 | `src/codex_router.py` | TEST-CATALOG-001 | verified |
 | REQ-BALANCE-001 | `src/codex_router.py`, `src/model_router.py` | TEST-BALANCE-001, TEST-BALANCE-002 | verified |
@@ -779,32 +870,31 @@ config를 변경하지 않고, 상태 갱신이 매 세션 반복되지 않는�
 | NFR-COMPAT-001 | `scripts/install.sh`, `scripts/uninstall.sh`, `scripts/install.ps1`, `scripts/uninstall.ps1` | TEST-COMPAT-001 | verified |
 | NFR-UX-001 | `src/codex_router.py` | TEST-UX-001 | verified |
 | NFR-COST-001 | `src/model_router.py`, `config/config.toml` | TEST-COST-001 | verified |
+| REQ-COST-001 | `src/codex_router.py` | TEST-COST-002 | implemented |
 
 Status 값: `draft` (사양만 있음) / `implemented` / `verified` (실제 실행까지 확인) /
 `deprecated`.
 
 ## 13. 미확정 사항
 
-- **비용 hard-stop의 지위.** `config/config.toml`의 `daily_limit_usd`,
-  `monthly_limit_usd`, `max_fallback_minutes`는 저장·기록만 되고 어떤 코드 경로도 이 값을
-  근거로 실행을 막지 않는다. 이것이 (a) 아직 구현되지 않은 요구사항인지, (b) 참고용 기록
-  값인지, (c) 설정에서 빼야 할 항목인지 소유자 확인이 필요하다. 확정 전까지 REQ를 만들지
-  않는다.
+- **비용 계산의 커버리지.** 2026-09-19 이전 세션은 원장에 없어 한도 계산에 포함되지
+  않는다. 또 rollout에 token 기록을 남기지 않은 실행은 `cost_usd: null`로 남는다.
+  `codex-router cost`의 "비용 근거가 없는 기록" 수가 0이 아닌 동안에는 누적이 실제보다
+  작을 수 있다.
 - **원본 Codex 경로.** 원본 실행 파일 경로가 Apple Silicon Homebrew 기준 한 값으로
   하드코딩되어 있다. Intel Mac이나 npm prefix가 다른 설치에서의 기대 동작(탐지할 것인가,
   설치 시 확정할 것인가, 설정 항목으로 뺄 것인가)이 정해져 있지 않다.
-- **여러 Codex 세션이 동시에 열려 있을 때의 resume 대상.** 현재는 `resume --last`가 유일한
-  수단이고 `USAGE_AND_SPEC.md` 16절도 "주의"라고만 적는다. 올바른 동작(세션 식별자 기록,
-  사용자 선택, 전환 거부 중 어느 것)이 미확정이다.
+- **같은 cwd에서 여러 Codex 세션이 동시에 열려 있을 때의 resume 대상.** 전환 시 방금
+  종료된 OpenAI 세션의 id를 rollout 메타에서 찾아 `resume <session_id>`로 이어간다.
+  같은 cwd에 동시에 열린 OpenAI 세션이 여럿이면 가장 최근에 갱신된 세션을 고르므로,
+  둘 이상이 동시에 한도에 걸리면 대상이 섞일 수 있다. id를 찾지 못하면 picker에서
+  사용자가 선택한다.
 - **Windows uninstall이 남기는 DPAPI Key 파일.** 실행 중인 설치 디렉터리를 지울 수 없어
   Key 파일이 남고 경로만 안내한다. 이것이 허용되는 동작인지, 다음 로그인 시 정리해야 하는
   결함인지 확정이 필요하다.
-- **Project Version과 Owner.** 저장소에 버전 표기나 소유자 명시가 없어 머리말을 `(TBD)`로
-  둔다.
 
 ## 14. 향후 개선 후보
 
-- Codex TUI가 정형 token/cost event를 제공하면 일간·월간 비용 hard-stop을 실제 강제한다.
 - DeepSeek도 사용할 수 없을 때의 제3 provider 전환(현재는 명시적 제외 항목).
 - 한도 감지를 화면 문구 대신 구조화된 신호로 바꾸는 방법(현재는 문구가 바뀌면 패턴 갱신이
   필요하다).
