@@ -26,17 +26,29 @@ LIVE_STATE_FILES = (
     pathlib.Path.home() / ".codex" / "router" / "state.json",
     pathlib.Path.home() / ".config" / "codex-router" / "config.toml",
 )
+LIVE_STATE_DIRS = (pathlib.Path.home() / ".codex" / "router" / "logs",)
 _live_snapshot: dict = {}
 
 
+def _live_state_paths():
+    """Guarded live files, including whatever the log directory holds at call time."""
+    paths = list(LIVE_STATE_FILES)
+    for directory in LIVE_STATE_DIRS:
+        if directory.is_dir():
+            paths.extend(sorted(item for item in directory.iterdir() if item.is_file()))
+    return paths
+
+
 def setUpModule():
-    for path in LIVE_STATE_FILES:
+    for path in _live_state_paths():
         _live_snapshot[path] = path.read_bytes() if path.exists() else None
 
 
 def tearDownModule():
     """No test may touch the user's live router state; restore it and fail if one did."""
     damaged = []
+    for path in _live_state_paths():
+        _live_snapshot.setdefault(path, None)
     for path, before in _live_snapshot.items():
         after = path.read_bytes() if path.exists() else None
         if after == before:
@@ -530,6 +542,7 @@ class BalanceCommandTests(unittest.TestCase):
         """Scripted output stays clean: `deep exec ...` must not gain router chatter."""
         stderr = io.StringIO()
         with mock.patch.object(router, "ensure_dirs"), \
+                mock.patch.object(router, "log"), \
                 mock.patch.object(router, "keychain_key", return_value="secret"), \
                mock.patch.object(router.sys, "stdin", mock.Mock(isatty=lambda: False)), \
                 mock.patch.object(router.subprocess, "call", return_value=0), \
@@ -759,6 +772,7 @@ class CostLimitTests(unittest.TestCase):
 
     def test_a_blocked_run_never_forks_a_session(self):
         with mock.patch.object(router, "ensure_dirs"), \
+                mock.patch.object(router, "log"), \
                 mock.patch.object(router, "check_model_catalog", return_value=("skipped", [])), \
                 mock.patch.object(router, "select_provider", return_value="deepseek"), \
                 mock.patch.object(router, "limit_block", return_value="일일 비용 한도 테스트"), \
