@@ -19,6 +19,11 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Added
 
+- REQ-ROUTE-001: wrapper 계약 회귀 테스트(TEST-ROUTE-005). 우회 표시가 있으면 stdin이
+  TTY여도 routing 없이 인자를 그대로 넘기고, 강제 지정 없는 비대화형 실행은 원본 Codex로
+  그대로 넘어가며, 실제 Codex는 절대 경로로 부른다. 이전에는 추적성 표에서 Test가
+  `(없음)`이었다.
+
 - REQ-COST-001: 비용·시간 한도 실제 강제. DeepSeek 세션 전에 `daily_limit_usd`,
   `monthly_limit_usd`, `max_fallback_minutes`를 확인하고 한도를 넘으면 실행하지 않고 종료
   코드 75로 끝낸다.
@@ -28,6 +33,16 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Changed
 
+- REQ-COST-001: 비용 한도 기본값을 0(무제한)으로 변경. DeepSeek 잔액 자체가 실제 지출
+  상한이라는 소유자 결정에 따라 `daily_limit_usd`·`monthly_limit_usd`는 소유자가 양수로
+  명시한 경우에만 실행을 막는다. `config/config.toml`·코드 기본값·설치본 설정 모두 0으로
+  반영.
+- REQ-COST-001: 시간 기반 한도(`[routing] max_fallback_minutes`) 제거. DeepSeek는 선불
+  잔액을 소비하는 과금형 provider라 지출 상한은 잔액과 `daily_limit_usd`·
+  `monthly_limit_usd`가 이미 맡고, 시간 한도는 정당한 작업까지 막는 중복이라는 소유자
+  결정에 따른다. fallback 경과 시간은 `codex-router cost` 출력에 진단 정보로만 남고
+  실행을 막지 않는다. 관련 테스트는 `test_a_long_fallback_does_not_block_a_deepseek_run`
+  으로 대체.
 - 한도를 0 이하로 두면 그 한도를 쓰지 않는다. OpenAI(ChatGPT 로그인)는 정액제라 비용 한도
   계산에서 제외하고, 그 사실을 `cost` 출력에 표시한다.
 - SPEC.md: Project Version 1.0.0, Owner 역할명 지정. `daily_limit_usd`류가 "참고값"이라는
@@ -35,6 +50,10 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Fixed
 
+- TEST-COST-002·잔액 회귀 테스트 환경 격리. Codex 에이전트 실행 환경이 물려주는
+  `CODEX_ROUTER_BYPASS=1` 때문에 `run_codex`를 직접 부르는 두 테스트가 bypass 경로로
+  빠져 실패하던 문제를, `test_router.py`의 `setUpModule`/`tearDownModule`이
+  `CODEX_ROUTER_BYPASS`·`FORCE_DEEPSEEK`를 suite 동안 제거하고 끝나면 복원하도록 고침.
 - NFR-COMPAT-001: Windows에서 저장된 원본 Codex 경로가 사라지거나 Router 자신의 shim을
   가리키면 PATH의 다음 Codex 실행기를 찾아 경로를 복구한다. 유효 경로 보존, 자기 재귀 방지,
   대체 실행기 없음 오류를 PowerShell 회귀 테스트로 검증한다.

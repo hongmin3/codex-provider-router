@@ -28,6 +28,7 @@ LIVE_STATE_FILES = (
 )
 LIVE_STATE_DIRS = (pathlib.Path.home() / ".codex" / "router" / "logs",)
 _live_snapshot: dict = {}
+_env_snapshot: dict[str, str | None] = {}
 
 
 def _live_state_paths():
@@ -42,6 +43,10 @@ def _live_state_paths():
 def setUpModule():
     for path in _live_state_paths():
         _live_snapshot[path] = path.read_bytes() if path.exists() else None
+    # Codex 에이전트 환경은 wrapper 재귀 방지용 CODEX_ROUTER_BYPASS=1을 물려주므로,
+    # run_codex를 직접 부르는 테스트가 bypass 경로로 빠지지 않게 suite 동안만 제거한다.
+    for key in ("FORCE_DEEPSEEK", "CODEX_ROUTER_BYPASS"):
+        _env_snapshot[key] = os.environ.pop(key, None)
 
 
 def tearDownModule():
@@ -58,6 +63,11 @@ def tearDownModule():
             path.unlink(missing_ok=True)
         else:
             path.write_bytes(before)
+    for key, value in _env_snapshot.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
     if damaged:
         raise AssertionError("tests wrote to live router state (restored): " + ", ".join(damaged))
 
@@ -741,8 +751,7 @@ class CostLimitTests(unittest.TestCase):
                   "sessions": 1, "token_sessions": 1}
         with mock.patch.object(router, "spend_totals", return_value=totals), \
                 mock.patch.object(router, "cost_limits",
-                                  return_value={"daily": 25.0, "monthly": 100.0}), \
-                mock.patch.object(router, "fallback_time_limit_minutes", return_value=None):
+                                  return_value={"daily": 25.0, "monthly": 100.0}):
             self.assertIn("일일 비용 한도", router.limit_block("deepseek"))
             self.assertIsNone(router.limit_block("openai"))
 
@@ -751,26 +760,20 @@ class CostLimitTests(unittest.TestCase):
                   "sessions": 1, "token_sessions": 1}
         with mock.patch.object(router, "spend_totals", return_value=totals), \
                 mock.patch.object(router, "cost_limits",
-                                  return_value={"daily": 25.0, "monthly": 100.0}), \
-                mock.patch.object(router, "fallback_time_limit_minutes", return_value=None):
+                                  return_value={"daily": 25.0, "monthly": 100.0}):
             self.assertIn("월간 비용 한도", router.limit_block("deepseek"))
             self.assertIsNone(router.limit_block("openai"))
 
-    def test_a_long_fallback_blocks_a_deepseek_run(self):
+    def test_a_long_fallback_does_not_block_a_deepseek_run(self):
         started = router.iso(router.now() - dt.timedelta(hours=9))
         with mock.patch.object(router, "spend_totals",
                                return_value={"today": 0.0, "month": 0.0, "records": 0,
                                              "unpriced": 0, "sessions": 0, "token_sessions": 0}), \
                 mock.patch.object(router, "cost_limits",
-                                  return_value={"daily": None, "monthly": None}), \
-                mock.patch.object(router, "fallback_time_limit_minutes", return_value=480.0):
-            reason = router.limit_block("deepseek", {"state": "OPENAI_COOLDOWN",
-                                                     "cooldown_started_at": started})
-            self.assertIn("최대 시간", reason)
-            # 한도 없는 설정이면 같은 상태에서도 막지 않는다.
-            with mock.patch.object(router, "fallback_time_limit_minutes", return_value=None):
-                self.assertIsNone(router.limit_block("deepseek", {"state": "OPENAI_COOLDOWN",
-                                                                  "cooldown_started_at": started}))
+                                  return_value={"daily": None, "monthly": None}):
+            # fallback 경과가 아무리 길어도 시간으로는 막지 않는다(REQ-COST-001).
+            self.assertIsNone(router.limit_block("deepseek", {"state": "OPENAI_COOLDOWN",
+                                                              "cooldown_started_at": started}))
 
     def test_a_blocked_run_never_forks_a_session(self):
         with mock.patch.object(router, "ensure_dirs"), \

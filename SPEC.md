@@ -4,9 +4,9 @@
 
 | 항목 | 값 |
 |---|---|
-| Document Version | 1.0.0 |
+| Document Version | 1.1.0 |
 | Project Version | 1.0.0 |
-| Last Updated | 2026-09-19 |
+| Last Updated | 2026-09-22 |
 | Status | active |
 | Owner | Router 운영 담당자 (역할명) |
 
@@ -83,8 +83,8 @@ Windows DPAPI 네 곳이다. 설치 후 실제 경로 배치는 `USAGE_AND_SPEC.
    (REQ-ROUTE-004).
 7. `deep` 계열 명령과 `FORCE_DEEPSEEK=1`은 1~6과 무관하게 DeepSeek로 직행한다
    (REQ-ROUTE-005).
-8. DeepSeek로 실행하기 전에 오늘·이번 달 누적 비용과 fallback 경과 시간을 확인하고, 한도를
-   넘었으면 실행하지 않고 이유와 조정 방법을 알린다(REQ-COST-001).
+8. DeepSeek로 실행하기 전에 오늘·이번 달 누적 비용을 확인하고, 한도를 넘었으면 실행하지
+   않고 이유와 조정 방법을 알린다(REQ-COST-001).
 
 상태 머신의 전이 표는 `USAGE_AND_SPEC.md` 5절에 있다.
 
@@ -375,11 +375,15 @@ TEST-AIROUTE-001
 ### REQ-COST-001
 
 #### 목적
-설정에 적어 둔 비용·시간 한도가 표시용 값이 아니라 **실제 실행 차단**으로 동작한다.
+설정에 적어 둔 비용 한도가 표시용 값이 아니라 **실제 실행 차단**으로 동작한다. 시간 기반
+한도는 2026-09-22 소유자 결정으로 제거한다 — DeepSeek는 선불 잔액을 소비하는 과금형
+provider라 지출 상한은 잔액과 비용 한도가 이미 맡고, 시간 한도는 정당한 작업까지 막는
+중복이기 때문이다. 같은 결정으로 비용 한도의 기본값도 0(무제한)이다 — 잔액 자체가 실제
+지출 상한이므로, 소유자가 양수 값을 명시한 경우에만 한도가 실행을 막는다.
 
 #### 동작
-- 한도는 `[cost] daily_limit_usd`, `[cost] monthly_limit_usd`,
-  `[routing] max_fallback_minutes` 세 가지다. **0 이하는 한도 없음**을 뜻한다.
+- 한도는 `[cost] daily_limit_usd`, `[cost] monthly_limit_usd` 두 가지다. **0 이하는 한도
+  없음**을 뜻하며 기본값은 0(무제한)이다.
 - 한도 계산 대상은 과금 provider인 DeepSeek이다. OpenAI(ChatGPT 로그인)는 정액제이므로
   비용 한도에 넣지 않고, 그 사실을 `cost` 출력에 적는다.
 - 비용은 추정이 아니라 실제 token 사용량으로 계산한다. 세션 전에 Codex rollout 파일
@@ -388,11 +392,11 @@ TEST-AIROUTE-001
   세션도 이번 실행분만 계산된다.
 - 세션 결과는 비용 원장(`~/.codex/router/spend.jsonl`)에 기록한다. `ai` 실행 기록
   (`~/.codex/router/logs/model-router-usage.jsonl`)도 같은 계산에 포함한다.
-- DeepSeek 실행 직전에 오늘·이번 달 누적과 fallback 경과 시간을 확인한다. 한도에
-  도달했으면 **실행하지 않고** 종료 코드 `75`로 끝내며, 어느 한도인지·현재 누적·조정
-  방법·`codex-router cost` 안내를 출력한다.
-- fallback 경과 시간은 OpenAI 한도가 감지된 시각(`cooldown_started_at`)부터 잰다. 기준
-  시각이 없으면(예: `deep` 직접 실행) 시간 한도는 적용하지 않는다.
+- DeepSeek 실행 직전에 오늘·이번 달 누적 비용을 확인한다. 한도에 도달했으면 **실행하지
+  않고** 종료 코드 `75`로 끝내며, 어느 한도인지·현재 누적·조정 방법·`codex-router cost`
+  안내를 출력한다.
+- fallback 경과 시간은 OpenAI 한도가 감지된 시각(`cooldown_started_at`)부터 재서
+  `codex-router cost`에 진단 정보로만 표시한다. 실행을 막는 근거로 쓰지 않는다.
 - 차단 결정은 로그에 `blocked` 이벤트로 남긴다.
 - `codex-router cost [--json]`이 한도·오늘/이번 달 누적·fallback 경과·커버리지를 보여
   준다. 커버리지는 "기록 수 / token이 있는 기록 수 / 비용 근거가 없는 기록 수"다.
@@ -490,10 +494,9 @@ Router가 다루는 데이터는 (1) provider 상태와 probe 일정, (2) DeepSe
 - API Key는 어떤 설정 파일에도 저장하지 않는다(NFR-SEC-001).
 - 설정 파일이 없어도 모든 항목은 코드의 기본값으로 동작해야 한다. 설정 파일은 기본값을
   덮어쓰기만 한다.
-- `[cost] daily_limit_usd`·`monthly_limit_usd`와 `[routing] max_fallback_minutes`는
-  실행을 막는 한도다(REQ-COST-001). 값을 0으로 두면 그 한도를 쓰지 않는다. 비용 한도는
-  과금 provider에만 적용하고, `max_fallback_minutes`는 OpenAI 한도 감지 후 자동 fallback
-  구간에만 적용한다.
+- `[cost] daily_limit_usd`·`monthly_limit_usd`는 실행을 막는 한도다(REQ-COST-001).
+  기본값은 0(무제한)이고, 소유자가 양수로 둔 경우에만 차단한다. 비용 한도는 과금
+  provider인 DeepSeek에만 적용한다. 시간 기반 한도는 두지 않는다(REQ-COST-001).
 - 설정을 다시 쓸 때 template의 설명 주석을 보존한다(REQ-MODEL-001).
 - 환경 변수는 `DEEPSEEK_API_KEY`(Key 출처)와 `FORCE_DEEPSEEK`(그 실행 한 번의 강제 전환)
   둘만 사용자 인터페이스다. 그 외 내부 표시용 변수는 사용자 문서에 노출하지 않는다.
@@ -606,6 +609,26 @@ Key 없음 경로는 자격증명 조회를 대체해 검증한다.
 `deep codex ...`와 `deep ...`이 동일하고, 사용자 provider override는 제거되며 `--` 뒤
 prompt는 보존되고, Key가 없으면 Codex를 시작하지 않고 exit code 78이며, 비대화형 강제
 실행도 DeepSeek profile을 유지한다. Windows shim이 같은 규칙을 따른다.
+
+### TEST-ROUTE-005
+
+#### 검증 대상
+REQ-ROUTE-001
+
+#### 선행 조건
+실제 Codex 자리에 argv를 기록하는 실행 파일을 두고, stdin의 TTY 여부를 직접 지정한다.
+자격증명과 network는 쓰지 않는다.
+
+#### 절차
+`tests/test_hardening.py`의 `test_bypass_marker_passes_through_untouched_even_on_a_tty`,
+`test_noninteractive_without_force_passes_through_to_plain_codex`,
+`test_real_codex_is_an_absolute_path`를 실행한다.
+
+#### Expected Result
+`CODEX_ROUTER_BYPASS=1`이면 stdin이 TTY여도 routing 없이 인자를 그대로 넘겨 중첩 wrapper가
+생기지 않는다. 강제 지정이 없는 비대화형 실행은 `--profile`/`--model`을 붙이지 않고 원본
+Codex로 그대로 넘어간다. `REAL_CODEX`는 절대 경로다 — 이름으로 부르면 PATH에서 wrapper
+자신을 다시 찾는다.
 
 ### TEST-STATE-001
 
@@ -826,14 +849,15 @@ Node가 아니라 Python `unittest`. 합성 rollout 파일과 임시 원장 경�
 #### 절차
 `tests/test_router.py`의 `CostLimitTests`를 실행한다. 합성 rollout에 `token_count`
 이벤트를 넣어 세션 사용량을 계산하고, `last_token_usage`가 스냅샷 이후분만 합산되는지
-확인한다(`resume` 대응). 오늘·월간 한도와 fallback 경과 시간을 각각 넘긴 상태에서
-`limit_block`이 차단 사유를 돌려주는지, 한도를 0으로 두면 막지 않는지, 차단된 실행이
-PTY를 만들지 않고 종료 코드 75로 끝나는지 확인한다.
+확인한다(`resume` 대응). 오늘·월간 한도를 넘긴 상태에서 `limit_block`이 차단 사유를
+돌려주는지, fallback 경과가 아무리 길어도 시간으로는 막지 않는지, 한도를 0으로 두면 막지
+않는지, 차단된 실행이 PTY를 만들지 않고 종료 코드 75로 끝나는지 확인한다.
 
 #### Expected Result
-한도를 넘은 DeepSeek 실행은 시작되지 않고 사유가 출력된다. OpenAI 실행과 한도 0 설정은
-막지 않는다. 비용은 token 사용량 × `models.toml` 단가로 계산되고, 이어서 실행한 세션은
-이번 실행분만 기록된다. 단가를 모르는 모델은 `cost_usd: null`로 남는다.
+비용 한도를 넘은 DeepSeek 실행은 시작되지 않고 사유가 출력된다. OpenAI 실행, 한도 0
+설정, fallback 경과가 긴 경우는 막지 않는다. 비용은 token 사용량 × `models.toml` 단가로
+계산되고, 이어서 실행한 세션은 이번 실행분만 기록된다. 단가를 모르는 모델은 `cost_usd:
+null`로 남는다.
 
 ### TEST-CTX-001
 
@@ -862,7 +886,7 @@ session id 탐색은 provider(`openai`)·작업 디렉터리(Unicode 정규화 �
 
 | Requirement | Implementation | Test | Status |
 |---|---|---|---|
-| REQ-ROUTE-001 | `src/codex_router.py` | (없음) | implemented |
+| REQ-ROUTE-001 | `src/codex_router.py` | TEST-ROUTE-005 | verified |
 | REQ-ROUTE-002 | `src/codex_router.py` | TEST-ROUTE-001 | verified |
 | REQ-ROUTE-003 | `src/codex_router.py` | TEST-ROUTE-002 | verified |
 | REQ-ROUTE-004 | `src/codex_router.py` | TEST-ROUTE-003 | verified |

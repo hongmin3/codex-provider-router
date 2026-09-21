@@ -71,8 +71,8 @@ def ensure_dirs() -> None:
 def config() -> dict:
     defaults = {"primary": {"provider": "openai"},
                 "fallback": {"provider": "deepseek", "model": DEFAULT_MODEL, "reasoning_effort": "high"},
-                "routing": {"auto_fallback": True, "auto_return": True, "probe_minutes": [10, 20, 30, 60], "max_fallback_minutes": 480, "catalog_check_hours": 24},
-                "cost": {"daily_limit_usd": 25.0, "monthly_limit_usd": 100.0,
+                "routing": {"auto_fallback": True, "auto_return": True, "probe_minutes": [10, 20, 30, 60], "catalog_check_hours": 24},
+                "cost": {"daily_limit_usd": 0.0, "monthly_limit_usd": 0.0,
                          "low_balance_usd": model_router.LOW_BALANCE_USD},
                 "model_router": {"recommendation": True, "auto_model_switch": False,
                                  "auto_provider_failover": False, "auto_escalation": False},
@@ -89,7 +89,7 @@ def config() -> dict:
 def write_config(cfg: dict) -> None:
     def boolean(value: object) -> str:
         return "true" if value else "false"
-    data = f'''[primary]\nprovider = "openai"\n\n[fallback]\nprovider = "deepseek"\nmodel = "{cfg['fallback']['model']}"\nreasoning_effort = "{cfg['fallback']['reasoning_effort']}"\n\n[routing]\nauto_fallback = {boolean(cfg['routing']['auto_fallback'])}\nauto_return = {boolean(cfg['routing']['auto_return'])}\nprobe_minutes = [{', '.join(str(int(v)) for v in cfg['routing']['probe_minutes'])}]\nmax_fallback_minutes = {int(cfg['routing']['max_fallback_minutes'])}\ncatalog_check_hours = {int(cfg['routing']['catalog_check_hours'])}\n\n[cost]\ndaily_limit_usd = {float(cfg['cost']['daily_limit_usd'])}\nmonthly_limit_usd = {float(cfg['cost']['monthly_limit_usd'])}\n# DeepSeek 잔액이 이 금액(USD) 미만이면 세션 시작 시 경고합니다.\nlow_balance_usd = {float(cfg['cost'].get('low_balance_usd', model_router.LOW_BALANCE_USD))}\n\n[model_router]\nrecommendation = {boolean(cfg['model_router']['recommendation'])}\nauto_model_switch = {boolean(cfg['model_router']['auto_model_switch'])}\nauto_provider_failover = {boolean(cfg['model_router']['auto_provider_failover'])}\nauto_escalation = {boolean(cfg['model_router']['auto_escalation'])}\n\n[classifier]\n# 기본 OFF: 일반 라우팅은 local heuristic만 사용하므로 추가 LLM token은 0입니다.\nenabled = {boolean(cfg['classifier']['enabled'])}\nconfidence_threshold = {float(cfg['classifier']['confidence_threshold'])}\nmax_output_tokens = {int(cfg['classifier']['max_output_tokens'])}\n\n[provider_cache]\nttl_minutes = {int(cfg['provider_cache']['ttl_minutes'])}\nrate_limit_minutes = {int(cfg['provider_cache']['rate_limit_minutes'])}\n'''
+    data = f'''[primary]\nprovider = "openai"\n\n[fallback]\nprovider = "deepseek"\nmodel = "{cfg['fallback']['model']}"\nreasoning_effort = "{cfg['fallback']['reasoning_effort']}"\n\n[routing]\nauto_fallback = {boolean(cfg['routing']['auto_fallback'])}\nauto_return = {boolean(cfg['routing']['auto_return'])}\nprobe_minutes = [{', '.join(str(int(v)) for v in cfg['routing']['probe_minutes'])}]\ncatalog_check_hours = {int(cfg['routing']['catalog_check_hours'])}\n\n[cost]\ndaily_limit_usd = {float(cfg['cost']['daily_limit_usd'])}\nmonthly_limit_usd = {float(cfg['cost']['monthly_limit_usd'])}\n# DeepSeek 잔액이 이 금액(USD) 미만이면 세션 시작 시 경고합니다.\nlow_balance_usd = {float(cfg['cost'].get('low_balance_usd', model_router.LOW_BALANCE_USD))}\n\n[model_router]\nrecommendation = {boolean(cfg['model_router']['recommendation'])}\nauto_model_switch = {boolean(cfg['model_router']['auto_model_switch'])}\nauto_provider_failover = {boolean(cfg['model_router']['auto_provider_failover'])}\nauto_escalation = {boolean(cfg['model_router']['auto_escalation'])}\n\n[classifier]\n# 기본 OFF: 일반 라우팅은 local heuristic만 사용하므로 추가 LLM token은 0입니다.\nenabled = {boolean(cfg['classifier']['enabled'])}\nconfidence_threshold = {float(cfg['classifier']['confidence_threshold'])}\nmax_output_tokens = {int(cfg['classifier']['max_output_tokens'])}\n\n[provider_cache]\nttl_minutes = {int(cfg['provider_cache']['ttl_minutes'])}\nrate_limit_minutes = {int(cfg['provider_cache']['rate_limit_minutes'])}\n'''
     tmp = CONFIG.with_suffix(".tmp")
     tmp.write_text(data); os.chmod(tmp, 0o600); tmp.replace(CONFIG)
 
@@ -111,7 +111,7 @@ def low_balance_usd() -> float:
     return value if value >= 0 else model_router.LOW_BALANCE_USD
 
 
-# --- 비용·시간 한도 -------------------------------------------------------
+# --- 비용 한도 ------------------------------------------------------------
 # 한도는 실제로 실행을 막는다. DeepSeek은 token당 과금이라 여기서 계산한 비용이 실제
 # 청구액이고, OpenAI(ChatGPT 로그인)는 정액제라 한도 계산에서 제외한다.
 #
@@ -138,13 +138,9 @@ def _positive_limit(section: object, key: str, default: float) -> float | None:
 def cost_limits() -> dict:
     section = config().get("cost", {})
     return {
-        "daily": _positive_limit(section, "daily_limit_usd", 25.0),
-        "monthly": _positive_limit(section, "monthly_limit_usd", 100.0),
+        "daily": _positive_limit(section, "daily_limit_usd", 0.0),
+        "monthly": _positive_limit(section, "monthly_limit_usd", 0.0),
     }
-
-
-def fallback_time_limit_minutes() -> float | None:
-    return _positive_limit(config().get("routing", {}), "max_fallback_minutes", 480.0)
 
 
 def model_prices() -> dict[str, tuple[float, float, float]]:
@@ -448,11 +444,6 @@ def limit_block(provider: str, state: dict | None = None) -> str | None:
     if limits["monthly"] is not None and totals["month"] >= limits["monthly"]:
         return (f"월간 비용 한도 USD {limits['monthly']:.2f}에 도달했습니다"
                 f"(이번 달 USD {totals['month']:.2f}).")
-    cap = fallback_time_limit_minutes()
-    elapsed = fallback_elapsed_minutes(state)
-    if cap is not None and elapsed is not None and elapsed >= cap:
-        return (f"DeepSeek fallback이 최대 시간 {cap:.0f}분을 넘었습니다"
-                f"(경과 {elapsed:.0f}분).")
     return None
 
 
@@ -461,7 +452,7 @@ def block_notice(reason: str) -> str:
         f"\n[Codex Router] {reason}\n"
         "[Codex Router] 한도 때문에 실행을 시작하지 않았습니다.\n"
         "[Codex Router] 한도 조정: ~/.config/codex-router/config.toml "
-        "([cost] daily_limit_usd·monthly_limit_usd, [routing] max_fallback_minutes, 0은 한도 없음)\n"
+        "([cost] daily_limit_usd·monthly_limit_usd, 0은 한도 없음)\n"
         "[Codex Router] 누적 확인: `codex-router cost` · fallback 상태 초기화: `codex-router reset`\n"
     )
 
@@ -481,11 +472,9 @@ def cost_command(args: list[str]) -> int:
         print("Usage: codex-router cost [--json]", file=sys.stderr)
         return 2
     limits, totals = cost_limits(), spend_totals()
-    cap = fallback_time_limit_minutes()
     elapsed = fallback_elapsed_minutes()
     payload = {
-        "limits": {"daily_usd": limits["daily"], "monthly_usd": limits["monthly"],
-                   "max_fallback_minutes": cap},
+        "limits": {"daily_usd": limits["daily"], "monthly_usd": limits["monthly"]},
         "spend": {"today_usd": round(totals["today"], 4),
                   "month_usd": round(totals["month"], 4)},
         "coverage": {"records": totals["records"], "sessions": totals["sessions"],
@@ -499,12 +488,11 @@ def cost_command(args: list[str]) -> int:
         return 0
     daily = "unlimited" if limits["daily"] is None else f"USD {limits['daily']:.2f}"
     monthly = "unlimited" if limits["monthly"] is None else f"USD {limits['monthly']:.2f}"
-    fallback = "unlimited" if cap is None else f"{cap:.0f} min"
     print(f"Metered provider: DeepSeek (OpenAI ChatGPT login is flat-rate and not counted)")
     print(f"Today: USD {totals['today']:.2f} / {daily}")
     print(f"This month: USD {totals['month']:.2f} / {monthly}")
     print(f"Fallback elapsed: " +
-          ("none" if elapsed is None else f"{elapsed:.0f} min") + f" / {fallback}")
+          ("none" if elapsed is None else f"{elapsed:.0f} min"))
     print(f"Records: {totals['records']} · sessions: {totals['sessions']} · "
           f"with tokens: {totals['token_sessions']} · without price: {totals['unpriced']}")
     return 0
