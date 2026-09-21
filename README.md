@@ -82,6 +82,8 @@ codex --yolo
 
 Windows wrapper는 원본 Codex 경로를 별도 보존하고 `FORCE_DEEPSEEK=1`일 때만 `deepseek-flash + high`를 주입합니다. 현재 Windows에서는 강제 전환만 지원하며, macOS wrapper의 TTY usage-limit 자동 감지·`resume --last` failover는 적용되지 않습니다.
 
+보존한 원본 경로가 다른 Router 제거나 Codex 재설치로 사라지면, Windows wrapper는 자신의 shim을 제외한 다음 `codex` 실행기를 PATH에서 찾아 경로를 자동 복구합니다.
+
 ## 새 Mac에 동일하게 설치하기
 
 설치 후에는 어느 폴더에서든 다음 명령으로 DeepSeek를 강제 사용할 수 있습니다.

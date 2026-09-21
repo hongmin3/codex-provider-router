@@ -1,4 +1,8 @@
+import os
 import pathlib
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -65,6 +69,161 @@ class WindowsScriptTests(unittest.TestCase):
 
     def test_installer_deploys_the_deep_shim(self):
         self.assertIn("'deep.cmd') -Destination (Join-Path $BinDir 'deep.cmd')", self.installer)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell")
+    def test_router_recovers_when_saved_codex_path_disappears(self):
+        powershell = shutil.which("powershell.exe")
+        self.assertIsNotNone(powershell)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            install_dir = root / "CodexProviderRouter"
+            router_bin = install_dir / "bin"
+            upstream_bin = root / "upstream"
+            router_bin.mkdir(parents=True)
+            upstream_bin.mkdir()
+
+            shutil.copy2(SCRIPTS / "codex-router.ps1", install_dir / "codex-router.ps1")
+            (router_bin / "codex.cmd").write_text(
+                "@echo off\r\necho ROUTER_SHIM %*\r\nexit /b 0\r\n", encoding="ascii"
+            )
+            saved_path = install_dir / "real-codex-path.txt"
+            saved_path.write_text(str(root / "removed-router" / "codex.exe"), encoding="ascii")
+
+            upstream = upstream_bin / "codex.cmd"
+            upstream.write_text(
+                "@echo off\r\necho RECOVERED_CODEX %*\r\nexit /b 0\r\n",
+                encoding="ascii",
+            )
+            env = os.environ.copy()
+            env["PATH"] = os.pathsep.join((str(router_bin), str(upstream_bin), env["PATH"]))
+
+            result = subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(install_dir / "codex-router.ps1"),
+                    "run",
+                    "--version",
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "RECOVERED_CODEX --version")
+            self.assertIn("Recovered original Codex", result.stderr)
+            self.assertEqual(saved_path.read_text(encoding="utf-8").strip(), str(upstream))
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell")
+    def test_router_rejects_its_own_saved_shim_and_recovers(self):
+        powershell = shutil.which("powershell.exe")
+        self.assertIsNotNone(powershell)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            install_dir = root / "CodexProviderRouter"
+            router_bin = install_dir / "bin"
+            upstream_bin = root / "upstream"
+            router_bin.mkdir(parents=True)
+            upstream_bin.mkdir()
+
+            shutil.copy2(SCRIPTS / "codex-router.ps1", install_dir / "codex-router.ps1")
+            (router_bin / "codex.cmd").write_text(
+                "@echo off\r\necho ROUTER_SHIM %*\r\nexit /b 0\r\n", encoding="ascii"
+            )
+            saved_path = install_dir / "real-codex-path.txt"
+            saved_path.write_text(str(router_bin / "codex.cmd"), encoding="ascii")
+            upstream = upstream_bin / "codex.cmd"
+            upstream.write_text("@echo off\r\necho UPSTREAM_CODEX %*\r\nexit /b 0\r\n", encoding="ascii")
+            env = os.environ.copy()
+            env["PATH"] = os.pathsep.join((str(router_bin), str(upstream_bin), env["PATH"]))
+
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                 str(install_dir / "codex-router.ps1"), "run", "--version"],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "UPSTREAM_CODEX --version")
+            self.assertEqual(saved_path.read_text(encoding="utf-8").strip(), str(upstream))
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell")
+    def test_router_preserves_a_valid_saved_codex_path(self):
+        powershell = shutil.which("powershell.exe")
+        self.assertIsNotNone(powershell)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            install_dir = root / "CodexProviderRouter"
+            router_bin = install_dir / "bin"
+            saved_bin = root / "saved"
+            other_bin = root / "other"
+            router_bin.mkdir(parents=True)
+            saved_bin.mkdir()
+            other_bin.mkdir()
+            shutil.copy2(SCRIPTS / "codex-router.ps1", install_dir / "codex-router.ps1")
+            shutil.copy2(SCRIPTS / "codex.cmd", router_bin / "codex.cmd")
+            saved = saved_bin / "codex.cmd"
+            saved.write_text("@echo off\r\necho SAVED_CODEX %*\r\nexit /b 0\r\n", encoding="ascii")
+            (other_bin / "codex.cmd").write_text(
+                "@echo off\r\necho OTHER_CODEX %*\r\nexit /b 0\r\n", encoding="ascii"
+            )
+            path_file = install_dir / "real-codex-path.txt"
+            path_file.write_text(str(saved), encoding="ascii")
+            env = os.environ.copy()
+            env["PATH"] = os.pathsep.join((str(router_bin), str(other_bin), env["PATH"]))
+
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                 str(install_dir / "codex-router.ps1"), "run", "--version"],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "SAVED_CODEX --version")
+            self.assertEqual(path_file.read_text(encoding="ascii"), str(saved))
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell")
+    def test_router_keeps_the_missing_path_error_when_no_alternative_exists(self):
+        powershell = shutil.which("powershell.exe")
+        self.assertIsNotNone(powershell)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            install_dir = root / "CodexProviderRouter"
+            router_bin = install_dir / "bin"
+            router_bin.mkdir(parents=True)
+            shutil.copy2(SCRIPTS / "codex-router.ps1", install_dir / "codex-router.ps1")
+            shutil.copy2(SCRIPTS / "codex.cmd", router_bin / "codex.cmd")
+            missing = root / "removed" / "codex.exe"
+            (install_dir / "real-codex-path.txt").write_text(str(missing), encoding="ascii")
+            env = os.environ.copy()
+            env["PATH"] = str(router_bin)
+
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                 str(install_dir / "codex-router.ps1"), "run", "--version"],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"Original Codex CLI not found at: {missing}", result.stderr)
 
     def test_cmd_shims_do_not_contain_secrets(self):
         for name in ("codex.cmd", "codex-router.cmd", "deep.cmd"):

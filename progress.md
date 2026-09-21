@@ -11,3 +11,4 @@
 - 2026-09-13: Codex의 `usage limit resets available`·잔여량 경고를 실제 한도 소진으로 오인해 DeepSeek `resume --last`로 전환하던 문제 수정. 명확한 hit/reached/exceeded/429만 감지.
 - 2026-09-14: 기존 failover 엔진을 재사용하는 `ai` Model Router 추가. Local heuristic, Provider 후보 필터, 승인 UI, runtime model/reasoning override, dry-run/status/doctor, 익명 usage log, 승인형 provider failover 및 capability escalation을 구현.
 - 기본 classifier는 OFF이며 일반 라우팅 추가 token은 0. DeepSeek status refresh는 공식 balance/models endpoint만 사용하고 OpenAI quota 확인용 LLM probe는 실행하지 않음.
+- 2026-09-21: Windows에서 저장된 원본 Codex 경로가 사라지면 PATH의 다음 Codex 실행기를 찾아 `real-codex-path.txt`를 자동 복구하도록 보완하고 실제 PowerShell 회귀 테스트 추가.

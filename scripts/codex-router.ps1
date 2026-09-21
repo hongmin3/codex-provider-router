@@ -14,15 +14,64 @@ $EncryptedKeyFile = Join-Path $InstallDir 'deepseek-api-key.dpapi'
 $ProfilePath = Join-Path $env:USERPROFILE '.codex\deepseek.config.toml'
 $script:RoutedExitCode = 0
 
+function Test-IsInstalledWrapper {
+    param([string]$Path)
+    if (-not $Path) {
+        return $false
+    }
+    $InstalledWrapper = [System.IO.Path]::GetFullPath((Join-Path $BinDir 'codex.cmd'))
+    $CandidatePath = [System.IO.Path]::GetFullPath($Path)
+    return [string]::Equals(
+        $CandidatePath,
+        $InstalledWrapper,
+        [StringComparison]::OrdinalIgnoreCase
+    )
+}
+
+function Find-AvailableCodex {
+    $Candidate = Get-Command codex -All -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandType -in @('Application', 'ExternalScript') -and
+            $_.Source -and
+            -not (Test-IsInstalledWrapper $_.Source) -and
+            (Test-Path -LiteralPath $_.Source -PathType Leaf)
+        } |
+        Select-Object -First 1
+    if ($Candidate) {
+        return $Candidate.Source
+    }
+    return $null
+}
+
 function Get-RealCodex {
-    if (-not (Test-Path -LiteralPath $RealCodexPathFile -PathType Leaf)) {
-        throw 'Original Codex path is missing. Re-run scripts\install.ps1.'
+    $SavedPath = $null
+    if (Test-Path -LiteralPath $RealCodexPathFile -PathType Leaf) {
+        $SavedPath = (Get-Content -LiteralPath $RealCodexPathFile -Raw).Trim()
+        if (
+            $SavedPath -and
+            -not (Test-IsInstalledWrapper $SavedPath) -and
+            (Test-Path -LiteralPath $SavedPath -PathType Leaf)
+        ) {
+            return $SavedPath
+        }
     }
-    $Path = (Get-Content -LiteralPath $RealCodexPathFile -Raw).Trim()
-    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "Original Codex CLI not found at: $Path"
+
+    $RecoveredPath = Find-AvailableCodex
+    if ($RecoveredPath) {
+        $Encoding = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText(
+            $RealCodexPathFile,
+            $RecoveredPath + [Environment]::NewLine,
+            $Encoding
+        )
+        [Console]::Error.WriteLine("[Codex Router] Recovered original Codex: $RecoveredPath")
+        return $RecoveredPath
     }
-    return $Path
+
+    if ($SavedPath) {
+        throw "Original Codex CLI not found at: $SavedPath"
+    }
+    throw 'Original Codex path is missing and no alternative was found. Re-run scripts\install.ps1.'
 }
 
 function Save-ProtectedKey {
