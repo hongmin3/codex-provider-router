@@ -2,7 +2,7 @@
 set -euo pipefail
 router_dir="$HOME/.codex/router"
 bin_dir="$HOME/.local/bin"
-for link in "$bin_dir/codex" "$bin_dir/codex-router" "$bin_dir/ai"; do
+for link in "$bin_dir/codex" "$bin_dir/codex-router" "$bin_dir/deep" "$bin_dir/ai"; do
   [[ -L "$link" && "$(readlink "$link")" == "$router_dir/codex_router.py" ]] && rm "$link"
 done
 if [[ -f "$HOME/.zshrc" ]]; then

@@ -217,6 +217,168 @@ def update_provider(provider: str, status: str, reason: str, *, reset_at: str | 
     save_provider_status(current)
 
 
+LOW_BALANCE_USD = 1.0
+BALANCE_URL = "https://api.deepseek.com/user/balance"
+BALANCE_HTTP_STATUS = {401: "AUTH_ERROR", 402: "BALANCE_EXHAUSTED", 429: "RATE_LIMITED"}
+
+
+def low_balance_threshold(cfg: dict | None = None) -> float:
+    """USD amount below which the DeepSeek balance is reported as a warning."""
+    section = (cfg if cfg is not None else router_config()).get("cost", {})
+    try:
+        value = float(section.get("low_balance_usd", LOW_BALANCE_USD))
+    except (AttributeError, TypeError, ValueError):
+        return LOW_BALANCE_USD
+    return value if value >= 0 else LOW_BALANCE_USD
+
+
+def parse_balance(payload: object) -> dict | None:
+    """USD amounts from a DeepSeek /user/balance response, or None if unreadable."""
+    infos = payload.get("balance_infos") if isinstance(payload, dict) else None
+    entries = [item for item in infos if isinstance(item, dict)] if isinstance(infos, list) else []
+    if not entries:
+        return None
+    entry = next((item for item in entries if str(item.get("currency", "")).upper() == "USD"), entries[0])
+
+    def amount(key: str, default: float | None = 0.0) -> float | None:
+        try:
+            return float(entry[key])
+        except (KeyError, TypeError, ValueError):
+            return default
+
+    total = amount("total_balance", None)
+    if total is None:
+        return None
+    return {"currency": str(entry.get("currency", "USD")).upper(), "total": total,
+            "granted": amount("granted_balance"), "topped_up": amount("topped_up_balance"),
+            "is_available": bool(payload.get("is_available", True))}
+
+
+def is_low_balance(result: dict, threshold: float | None = None) -> bool:
+    """True only when a successful lookup shows less than the warning threshold."""
+    balance = result.get("balance") if isinstance(result, dict) else None
+    if not result.get("ok") or not isinstance(balance, dict):
+        return False
+    limit = low_balance_threshold() if threshold is None else threshold
+    return float(balance["total"]) < limit
+
+
+def low_balance_message(currency: str = "USD", threshold: float | None = None) -> str:
+    """One wording for the low-balance warning, wherever it is printed."""
+    limit = "" if threshold is None else f" {currency} {float(threshold):.2f}"
+    return f"WARNING: 잔액이 경고 기준{limit} 미만입니다. DeepSeek Platform에서 충전해 주세요."
+
+
+def fetch_deepseek_balance(timeout: float = 10.0) -> dict:
+    """Live DeepSeek balance. The API key is used for the call, never returned."""
+    key = _keychain_key()
+    if not key:
+        return {"ok": False, "status": "AUTH_ERROR", "reason": "DeepSeek API key is missing",
+                "checked_at": iso(), "balance": None}
+    request = urllib.request.Request(BALANCE_URL, headers={"Authorization": f"Bearer {key}",
+                                                           "User-Agent": "codex-model-router/1"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as exc:
+        state = BALANCE_HTTP_STATUS.get(exc.code, "SERVER_ERROR" if exc.code >= 500 else "UNKNOWN_ERROR")
+        result = {"ok": False, "status": state, "reason": f"DeepSeek HTTP {exc.code}",
+                  "checked_at": iso(), "balance": None}
+        retry = exc.headers.get("Retry-After") if exc.headers else None
+        if retry and str(retry).isdigit():
+            result["retry_at"] = iso(utc_now() + dt.timedelta(seconds=int(retry)))
+        return result
+    except (OSError, urllib.error.URLError, TimeoutError, ValueError):
+        return {"ok": False, "status": "SERVER_ERROR", "reason": "DeepSeek balance request failed",
+                "checked_at": iso(), "balance": None}
+    balance = parse_balance(payload)
+    if balance is None:
+        return {"ok": False, "status": "UNKNOWN_ERROR", "reason": "DeepSeek balance response could not be read",
+                "checked_at": iso(), "balance": None}
+    usable = bool(balance["is_available"])
+    return {"ok": True, "status": "AVAILABLE" if usable else "BALANCE_EXHAUSTED",
+            "reason": "Balance endpoint succeeded" if usable else "DeepSeek reports insufficient balance",
+            "checked_at": iso(), "balance": balance}
+
+
+def balance_text(result: dict, threshold: float | None = None) -> str:
+    """Human-readable balance block; a failed lookup never renders an amount."""
+    limit = low_balance_threshold() if threshold is None else threshold
+    balance = result.get("balance")
+    lines = ["DeepSeek Balance"]
+    if not result.get("ok") or not isinstance(balance, dict):
+        return "\n".join(lines + [f"  Status: {result.get('status', 'UNKNOWN_ERROR')}",
+                                  f"  Reason: {result.get('reason', 'Balance is unavailable')}",
+                                  f"  Checked: {result.get('checked_at', '-')}"])
+    currency = balance.get("currency", "USD")
+    lines.extend([f"  Total: {currency} {balance['total']:.2f}",
+                  f"  Topped-up: {currency} {balance['topped_up']:.2f}",
+                  f"  Granted: {currency} {balance['granted']:.2f}",
+                  f"  Usable: {'yes' if balance.get('is_available') else 'no'}",
+                  f"  Warn below: {currency} {limit:.2f}",
+                  f"  Checked: {result.get('checked_at', '-')}"])
+    if is_low_balance(result, limit):
+        lines.append(f"  {low_balance_message(currency, limit)}")
+    return "\n".join(lines)
+
+
+def balance_report(args: list[str], threshold: float) -> int:
+    """Print the live balance as text or JSON. Exit code 0 only for a successful lookup."""
+    result = fetch_deepseek_balance()
+    if result.get("ok"):
+        record_balance(result, threshold)
+    if "--json" in args:
+        payload = {"status": result.get("status"), "reason": result.get("reason"),
+                   "checked_at": result.get("checked_at"), "threshold_usd": threshold,
+                   "low_balance": is_low_balance(result, threshold)}
+        if isinstance(result.get("balance"), dict):
+            payload["balance"] = result["balance"]
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(balance_text(result, threshold))
+    return 0 if result.get("ok") else 1
+
+
+def record_balance(result: dict, threshold: float | None = None) -> dict:
+    """Merge a balance lookup into the cached DeepSeek entry; no amount, no write."""
+    status = load_provider_status()
+    balance = result.get("balance")
+    if not isinstance(balance, dict):
+        return status
+    limit = low_balance_threshold() if threshold is None else threshold
+    entry = dict(status.get("deepseek", {}))
+    entry["balance"] = balance
+    entry["low_balance"] = is_low_balance(result, limit)
+    entry["low_balance_threshold"] = limit
+    entry["balance_checked_at"] = result.get("checked_at", iso())
+    if result.get("status") == "BALANCE_EXHAUSTED":
+        entry.update(status="BALANCE_EXHAUSTED", reason=result.get("reason", "DeepSeek reports insufficient balance"),
+                     checked_at=result.get("checked_at", iso()), source="deepseek-balance-endpoint")
+    status["deepseek"] = entry
+    save_provider_status(status)
+    return status
+
+
+def probe_deepseek_models(key: str, timeout: float = 10.0) -> dict | None:
+    """None when the model endpoint answers; otherwise the status fields to record."""
+    request = urllib.request.Request("https://api.deepseek.com/models",
+                                     headers={"Authorization": f"Bearer {key}",
+                                              "User-Agent": "codex-model-router/1"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            json.load(response)
+        return None
+    except urllib.error.HTTPError as exc:
+        state = BALANCE_HTTP_STATUS.get(exc.code, "SERVER_ERROR" if exc.code >= 500 else "UNKNOWN_ERROR")
+        failure = {"status": state, "reason": f"DeepSeek HTTP {exc.code}", "checked_at": iso()}
+        retry = exc.headers.get("Retry-After") if exc.headers else None
+        if retry and str(retry).isdigit():
+            failure["retry_at"] = iso(utc_now() + dt.timedelta(seconds=int(retry)))
+        return failure
+    except (OSError, urllib.error.URLError, TimeoutError, ValueError):
+        return {"status": "SERVER_ERROR", "reason": "DeepSeek preflight connection failed", "checked_at": iso()}
+
+
 def refresh_provider_status() -> dict:
     status = load_provider_status()
     login = subprocess.run([REAL_CODEX, "login", "status"], text=True, capture_output=True, timeout=15)
@@ -231,31 +393,24 @@ def refresh_provider_status() -> dict:
         status["deepseek"] = {"status": "AUTH_ERROR", "reason": "DeepSeek API key is missing",
                               "checked_at": iso(), "source": "local-keychain"}
     else:
-        headers = {"Authorization": f"Bearer {key}", "User-Agent": "codex-model-router/1"}
-        request = urllib.request.Request("https://api.deepseek.com/user/balance", headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                balance = json.load(response)
-            if not bool(balance.get("is_available")):
-                status["deepseek"] = {"status": "BALANCE_EXHAUSTED", "reason": "DeepSeek reports insufficient balance",
-                                      "checked_at": iso(), "source": "deepseek-balance-endpoint"}
+        result = fetch_deepseek_balance()
+        entry = {"status": result["status"], "reason": result["reason"],
+                 "checked_at": result["checked_at"], "source": "deepseek-balance-endpoint"}
+        if result.get("retry_at"):
+            entry["retry_at"] = result["retry_at"]
+        if isinstance(result.get("balance"), dict):
+            limit = low_balance_threshold()
+            entry["balance"] = result["balance"]
+            entry["low_balance"] = is_low_balance(result, limit)
+            entry["low_balance_threshold"] = limit
+            entry["balance_checked_at"] = result.get("checked_at", iso())
+        if result["status"] == "AVAILABLE":
+            failure = probe_deepseek_models(key)
+            if failure is None:
+                entry["reason"] = "Balance and model endpoints succeeded"
             else:
-                models_request = urllib.request.Request("https://api.deepseek.com/models", headers=headers)
-                with urllib.request.urlopen(models_request, timeout=10) as response:
-                    json.load(response)
-                status["deepseek"] = {"status": "AVAILABLE", "reason": "Balance and model endpoints succeeded",
-                                      "checked_at": iso(), "source": "deepseek-balance-endpoint"}
-        except urllib.error.HTTPError as exc:
-            mapping = {401: "AUTH_ERROR", 402: "BALANCE_EXHAUSTED", 429: "RATE_LIMITED"}
-            state = mapping.get(exc.code, "SERVER_ERROR" if exc.code >= 500 else "UNKNOWN_ERROR")
-            status["deepseek"] = {"status": state, "reason": f"DeepSeek HTTP {exc.code}",
-                                  "checked_at": iso(), "source": "deepseek-balance-endpoint"}
-            retry = exc.headers.get("Retry-After")
-            if retry and retry.isdigit():
-                status["deepseek"]["retry_at"] = iso(utc_now() + dt.timedelta(seconds=int(retry)))
-        except (OSError, urllib.error.URLError, TimeoutError):
-            status["deepseek"] = {"status": "SERVER_ERROR", "reason": "DeepSeek preflight connection failed",
-                                  "checked_at": iso(), "source": "deepseek-balance-endpoint"}
+                entry.update(failure)
+        status["deepseek"] = entry
     save_provider_status(status)
     return status
 
@@ -615,6 +770,13 @@ def status_text(statuses: dict, *, details: bool = True) -> str:
             lines.append(f"  Next check: {value['next_check_at']}")
         elif details and value.get("status") in UNAVAILABLE:
             lines.append("  Reset: unavailable")
+        balance = value.get("balance")
+        if isinstance(balance, dict):
+            currency = balance.get("currency", "USD")
+            lines.append(f"  Balance: {currency} {balance['total']:.2f}"
+                         f" (topped-up {balance['topped_up']:.2f} / granted {balance['granted']:.2f})")
+            if value.get("low_balance"):
+                lines.append(f"  {low_balance_message(currency, value.get('low_balance_threshold'))}")
     return "\n".join(lines)
 
 
@@ -756,6 +918,8 @@ def cli(argv: list[str], executor: Callable[[str, Model, str, Decision, dict], i
         print(f"Router\n  Requests: {metrics['requests']}\n  Classifier calls: {metrics['classifier_calls']}\n"
               f"  Local routing rate: {metrics['local_rate']:.0%}\n  Routing tokens: {metrics['routing_tokens']}")
         return 0
+    if argv and argv[0] == "balance":
+        return balance_report(argv[1:], low_balance_threshold())
     if argv and argv[0] == "doctor":
         return doctor()
     prompt, options = parse_prompt(argv)

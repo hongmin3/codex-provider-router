@@ -8,12 +8,13 @@ codex --yolo
 │  └─ ChatGPT 로그인 기반 Codex 사용
 └─ OpenAI usage limit
    ├─ Context checkpoint 생성
-   ├─ 같은 Codex thread 보존
-   └─ DeepSeek로 resume
-      ├─ 현재 작업은 DeepSeek에서 완료
-      └─ 다음 Codex 실행 전 OpenAI probe
-         ├─ 성공: OpenAI로 복귀
-         └─ 실패: DeepSeek 유지
+   ├─ 사용자에게 y/N 확인 (기본값: 전환 안 함)
+   ├─ y: 같은 Codex thread를 DeepSeek로 resume
+   │  ├─ 현재 작업은 DeepSeek에서 완료
+   │  └─ 다음 Codex 실행 전 OpenAI probe
+   │     ├─ 성공: OpenAI로 복귀
+   │     └─ 실패: DeepSeek 유지
+   └─ n: 전환 없이 종료
 ```
 
 사용자는 provider별 명령을 따로 실행하지 않고 평소와 같이 `codex --yolo`를 사용한다.
@@ -144,9 +145,38 @@ codex-router doctor
 codex-router logs
 ```
 
-`status`는 Primary provider/model, fallback provider/model/reasoning, active provider, OpenAI 상태, cooldown, next probe, Key 설정 여부를 보여준다.
+`status`는 Primary provider/model, fallback provider/model/reasoning, active provider, OpenAI 상태, cooldown, next probe, Key 설정 여부를 보여준다. 마지막으로 확인한 DeepSeek 잔액이 cache에 있으면 금액과 확인 시각을 함께 표시하고, 경고 기준 미만이면 경고 줄을 덧붙인다.
 
-### 4.7 테스트
+### 4.7 DeepSeek 잔액 확인과 부족 경고
+
+```bash
+codex-router balance
+codex-router balance --json
+codex-router balance threshold
+codex-router balance threshold 2.5
+ai balance
+```
+
+- `balance`는 DeepSeek 공식 `/user/balance` endpoint를 호출해 USD 잔액(총액·충전·증정)과 사용 가능 여부를 표시한다. `ai balance`도 같은 결과를 낸다.
+- `--json`은 `status`, `checked_at`, `threshold_usd`, `low_balance`, `balance`를 담은 JSON을 출력한다. 자동화·모니터링에서 사용한다.
+- 조회에 성공하면 종료 코드는 0, 실패하면 1이다. 잔액이 기준 미만이어도 조회 자체가 성공했으면 0이다.
+- 조회 결과는 `~/.codex/router/provider-status.json`에 기록되어 `codex-router status`와 `ai status`가 network 호출 없이 같은 금액을 보여준다.
+- `balance threshold`는 경고 기준(USD)을 읽고, 값을 주면 config에 저장한다. 기본값은 USD 1.00이다.
+- DeepSeek 세션에 들어가면 시작 배너에 잔액이 함께 나오고, 세션이 끝나면 새로 조회한 잔액을 한 줄 더 표시한다. 실제 출력:
+
+```text
+[Codex Router] Provider: DeepSeek | Model: deepseek-flash | Reasoning: high | requested | Balance: USD 2.67
+codex-cli 0.155.1
+[Codex Router] DeepSeek 잔액: USD 2.67
+```
+
+- 시작 배너의 금액은 cache에서 읽는다. cache가 `provider_cache.ttl_minutes`(기본 15분)보다 오래되었으면 **자식 process**(`codex_router.py balance --json`)로 갱신한다. wrapper가 Codex 세션을 `forkpty()`로 띄우기 때문에, 이 process에서 HTTPS 요청을 하면 macOS resolver가 남긴 thread 때문에 multi-thread 상태로 fork하게 되고 Python이 deadlock 경고를 낸다. 조회는 자식에게 맡기고 부모는 cache만 읽는다.
+- 잔액이 기준 미만이면 DeepSeek 세션이 시작될 때 경고를 stderr에 한 번 표시한다. OpenAI 사용 한도로 자동 전환되는 경우에도 같다.
+- Codex TUI의 `/status` 화면에는 잔액을 넣지 않는다. 그 화면은 Codex binary가 그리는 것이라 wrapper가 줄을 추가하면 TUI가 다시 그릴 때 깨진다. 세션 중간에 확인하려면 다른 터미널에서 `codex-router balance`를 실행한다.
+- 잔액 부족 경고는 provider를 중단시키지 않는다. DeepSeek가 `is_available: false`(잔액 소진)를 보고할 때만 `BALANCE_EXHAUSTED`로 기록되어 routing에서 제외된다.
+- API Key는 요청 header로만 사용하고 출력·로그·config에 남기지 않는다.
+
+### 4.8 테스트
 
 ```bash
 codex-router test openai
@@ -157,11 +187,20 @@ codex-router test checkpoint
 
 # Interactive 강제 fallback
 FORCE_DEEPSEEK=1 codex --yolo
+
+# 같은 실행을 줄여 쓰는 DeepSeek 전용 명령
+deep codex --yolo
+codex-router deep --yolo
+codex-router deepseek --yolo
 ```
 
 `FORCE_DEEPSEEK=1`은 해당 명령 한 번에만 DeepSeek를 선택하며 Router의 OpenAI/cooldown 상태는 변경하지 않는다. 숫자 `1`은 model 번호가 아니라 활성화를 의미하는 boolean flag다.
 
-### 4.8 상태 초기화
+`deep` 명령과 `codex-router deep|deepseek`는 OpenAI 상태·cooldown과 무관하게 DeepSeek를 선택한다. 첫 인자가 `codex`이면 무시하므로 `deep codex --yolo`와 `deep --yolo`가 동일하며, 비대화형 `deep exec "..."`도 DeepSeek profile을 유지한다. Key가 없으면 Codex를 시작하지 않고 exit code 78로 종료한다.
+
+일반 `codex` 명령은 기존과 동일하게 ChatGPT 로그인 Codex(GPT 모델)를 사용한다. DeepSeek는 `deep` 접두어를 붙였을 때만 선택되며, 두 명령은 같은 Codex binary와 같은 config·MCP·project trust를 공유한다.
+
+### 4.9 상태 초기화
 
 ```bash
 codex-router reset
@@ -176,13 +215,15 @@ OPENAI_ACTIVE
 ├─ OpenAI 정상
 │  └─ OpenAI Codex 실행
 └─ Usage limit 감지
-   └─ OPENAI_COOLDOWN
-      ├─ Checkpoint 생성
+   ├─ Checkpoint 생성
+   ├─ 사용자 y/N 확인
+   ├─ n: 전환 없이 종료
+   └─ y: OPENAI_COOLDOWN
       ├─ DeepSeek 설정·Key 확인
       └─ DEEPSEEK_ACTIVE
          ├─ 현재 작업은 DeepSeek에서 종료
          └─ 다음 `codex` 실행
-            ├─ Probe 시간 전: DeepSeek 유지
+            ├─ Probe 시간 전: 사용자 확인 후 DeepSeek 유지
             └─ Probe 시간 도달
                ├─ OpenAI 성공: OPENAI_ACTIVE
                └─ OpenAI 실패: cooldown 연장
@@ -260,7 +301,7 @@ DeepSeek failure
       └─ git-diff.txt
 ```
 
-대화, 사용자 요청, tool call, 명령 결과, TODO는 Codex persisted thread에 보존되며 DeepSeek 전환 시 `resume --last`로 재개한다.
+대화, 사용자 요청, tool call, 명령 결과, TODO는 Codex persisted thread에 보존되며 DeepSeek 전환 시 방금 끝난 OpenAI 세션의 id로 `resume <session_id>` 재개한다. 세션 id를 식별하지 못하면 resume picker에서 사용자가 직접 선택한다.
 
 ## 9. 보안
 
@@ -295,6 +336,7 @@ Key 설정 시 입력은 화면에 표시되지 않고 두 번 입력해 일치 
    ├─ codex_router.py
    ├─ deepseek-models.json
    ├─ state.json
+   ├─ spend.jsonl                # 세션별 token·환산 비용 (prompt 미포함)
    ├─ logs/
    ├─ fallback-state/
    └─ uninstall.sh
@@ -323,6 +365,7 @@ catalog_check_hours = 24
 [cost]
 daily_limit_usd = 25.0
 monthly_limit_usd = 100.0
+low_balance_usd = 1.0
 ```
 
 API Key는 이 파일에 저장하지 않는다.
@@ -349,8 +392,17 @@ API Key, access token, session token, password, 원본 오류 본문은 기록�
 
 - fallback 시작 시 provider, model, reasoning을 터미널에 표시한다.
 - 세션 시작·종료·실패를 로그한다.
-- `daily_limit_usd`, `monthly_limit_usd`, `max_fallback_minutes`를 config에서 관리한다.
-- 현재 Codex TUI가 wrapper에 안정적인 정형 token/cost event를 제공하지 않아 일간·월간 비용 hard-stop은 적용되지 않는다.
+- `daily_limit_usd`, `monthly_limit_usd`, `max_fallback_minutes`를 config에서 관리하고,
+  값을 넘으면 DeepSeek 실행을 시작하지 않는다(종료 코드 75, REQ-COST-001). 0 이하는
+  한도 없음이다.
+- 비용은 Codex rollout(`~/.codex/sessions/**/rollout-*.jsonl`)에서 세션 전후 차이만 읽어
+  `models.toml` 단가로 환산하고 `~/.codex/router/spend.jsonl`에 기록한다. OpenAI(ChatGPT
+  로그인)는 정액제라 비용 한도 계산에서 제외한다.
+- `codex-router cost [--json]`이 오늘·이번 달 누적, 한도, fallback 경과 시간, 그리고
+  비용 근거를 찾지 못한 기록 수(커버리지)를 보여 준다.
+- `low_balance_usd`(기본 1.0) 미만이면 DeepSeek 세션 시작 시 잔액 경고를 표시한다. `codex-router balance`로 현재 잔액을 확인한다.
+- rollout은 token 수만 읽고 prompt·응답 내용은 읽지 않는다. 단가를 모르는 모델은
+  `cost_usd: null`로 기록하고 한도 계산에서 0으로 본다.
 
 ## 13. 기존 Codex 보존
 
@@ -407,9 +459,9 @@ Tests
 
 ## 16. 현재 제한사항
 
-1. Codex CLI 0.154.0에는 interactive provider hot-swap API가 없어 persisted thread의 `resume --last`로 대체한다.
+1. Codex CLI에는 interactive provider hot-swap API가 없어 persisted thread를 `resume <session_id>`로 재개한다.
 2. Usage-limit 감지는 interactive TTY에 표시된 문구를 기준으로 하므로 서버 문구가 바뀌면 패턴 갱신이 필요하다.
-3. `resume --last`를 사용하므로 여러 Codex 세션을 동시에 운영하는 경우 마지막 thread 선택에 주의한다.
+3. 같은 작업 디렉터리에서 여러 Codex 세션을 동시에 운영하면 전환 시 가장 최근에 갱신된 OpenAI 세션으로 이어진다. 세션 id를 식별하지 못하면 picker에서 직접 선택한다.
 4. Custom provider config에 Codex connect timeout을 별도로 단축하는 공식 필드가 없어 network failure의 최종 종료까지 시간이 걸릴 수 있다.
 5. DeepSeek도 사용할 수 없으면 제3 provider로 전환하지 않고 이유와 대응 방법을 표시한 후 종료한다.
 6. 작업 파일, Codex thread, checkpoint는 오류 발생으로 삭제되지 않는다.
@@ -425,6 +477,10 @@ Router가 `forkpty()`로 Codex를 실행할 때 실제 터미널의 rows/columns
 | 평소 Codex | `codex --yolo` |
 | OpenAI 모델 | Codex TUI의 `/model` |
 | 상태 | `codex-router status` |
+| 비용·한도 | `codex-router cost`, `codex-router cost --json` |
+| DeepSeek 잔액 | `codex-router balance`, `ai balance` |
+| 잔액 JSON | `codex-router balance --json` |
+| 잔액 경고 기준 | `codex-router balance threshold`, `codex-router balance threshold 2.5` |
 | DeepSeek 모델 확인 | `codex-router model` |
 | 최신 모델 목록 | `codex-router models list` |
 | 최신 모델 확인 | `codex-router models check` |
@@ -439,6 +495,7 @@ Router가 `forkpty()`로 Codex를 실행할 때 실제 터미널의 rows/columns
 | 로그 | `codex-router logs` |
 | OpenAI 테스트 | `codex-router test openai` |
 | DeepSeek 테스트 | `codex-router test deepseek` |
+| DeepSeek 전용 실행 | `deep codex --yolo`, `codex-router deep|deepseek --yolo` |
 | 강제 fallback | `FORCE_DEEPSEEK=1 codex --yolo` |
 | Router 상태 초기화 | `codex-router reset` |
 | 제거 | `codex-router uninstall` |
@@ -529,6 +586,7 @@ ai
 ~/.codex/router/
 ├─ provider-status.json # Provider 상태 cache
 ├─ model-failures.json  # capability failure 횟수
+├─ spend.jsonl          # 세션별 token·환산 비용 (한도 판정용)
 └─ logs/
    └─ model-router-usage.jsonl
 ```
