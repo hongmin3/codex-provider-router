@@ -82,6 +82,44 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(args[:4], ["--profile", "deepseek", "--model", "deepseek-flash"])
         self.assertEqual(args[-2:], ["exec", "hello"])
 
+    def _capturing_codex(self):
+        """실제 Codex 자리에 argv를 기록하는 실행 파일을 둔다 (test_forced_... 와 같은 방식)."""
+        executable = self.root / "fake-codex"
+        output = self.root / "wrapper-argv.json"
+        executable.write_text(
+            f"#!{sys.executable}\nimport json, sys\nfrom pathlib import Path\n"
+            f"Path({str(output)!r}).write_text(json.dumps(sys.argv[1:]))\n")
+        executable.chmod(0o700)
+        return executable, output
+
+    def test_bypass_marker_passes_through_untouched_even_on_a_tty(self):
+        """REQ-ROUTE-001: 자식 Codex에 넘긴 우회 표시가 중첩 wrapper를 막는다.
+
+        이 분기는 TTY 검사보다 먼저 와야 한다 — 그렇지 않으면 대화형 자식 process가
+        다시 routing을 타고 wrapper가 자기 자신을 재귀 호출한다.
+        """
+        executable, output = self._capturing_codex()
+        tty = mock.Mock(); tty.isatty.return_value = True
+        with mock.patch.object(router, "REAL_CODEX", str(executable)), \
+                mock.patch.object(router.sys, "stdin", tty), \
+                mock.patch.dict(os.environ, {"CODEX_ROUTER_BYPASS": "1"}):
+            self.assertEqual(router.run_codex(["--yolo", "인자 그대로"]), 0)
+        self.assertEqual(json.loads(output.read_text()), ["--yolo", "인자 그대로"])
+
+    def test_noninteractive_without_force_passes_through_to_plain_codex(self):
+        """REQ-ROUTE-001: 강제 지정이 없는 비대화형 실행은 원본 Codex로 그대로 넘긴다."""
+        executable, output = self._capturing_codex()
+        with mock.patch.object(router, "REAL_CODEX", str(executable)), \
+                mock.patch.object(router.sys, "stdin", io.StringIO()):
+            self.assertEqual(router.run_codex(["exec", "hello"]), 0)
+        # DeepSeek 경로였다면 --profile/--model 이 앞에 붙는다. 그대로여야 한다.
+        self.assertEqual(json.loads(output.read_text()), ["exec", "hello"])
+
+    def test_real_codex_is_an_absolute_path(self):
+        """REQ-ROUTE-001: 실제 Codex는 절대 경로로 부른다 — PATH를 다시 타면 wrapper가
+        자기 자신을 찾아 재귀한다. 이름만으로 부르지 않는지 상수로 고정한다."""
+        self.assertTrue(os.path.isabs(router.REAL_CODEX), router.REAL_CODEX)
+
     def test_deepseek_args_respects_prompt_separator_and_equals_options(self):
         args = router.deepseek_args(["--profile=other", "--model=other", "--", "--model", "literal prompt"])
         self.assertNotIn("--profile=other", args)
