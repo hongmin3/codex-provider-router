@@ -38,9 +38,9 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 - NFR-COMPAT-001: Windows에서 저장된 원본 Codex 경로가 사라지거나 Router 자신의 shim을
   가리키면 PATH의 다음 Codex 실행기를 찾아 경로를 복구한다. 유효 경로 보존, 자기 재귀 방지,
   대체 실행기 없음 오류를 PowerShell 회귀 테스트로 검증한다.
-- CI(macOS)가 깨끗한 홈에서 실패하던 문제 수정. `test_router.py`의 두 테스트가
+- CI(macOS)가 깨끗한 홈에서 실패하던 문제 수정. `test_router.py`의 세 테스트가
   `ensure_dirs`만 mock하고 `log`는 두지 않아 실제 `~/.codex/router/logs/`에 기록을
-  시도했다. 두 테스트에 `log` mock을 추가하고, live state guard가 로그 디렉터리까지
+  시도했다. 세 테스트에 `log` mock을 추가하고, live state guard가 로그 디렉터리까지
   보도록 넓혀 같은 유출이 다시 생기면 suite가 실패하게 했다.
 - REQ-CTX-001: usage limit에서 `y`로 전환할 때 `resume --last`가 방금 종료된 OpenAI
   세션 대신 다른 thread를 열던 문제 수정. 전환 시 방금 끝난 세션의 id를 rollout 메타에서

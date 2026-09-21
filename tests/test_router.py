@@ -131,6 +131,7 @@ class RouterTests(unittest.TestCase):
 
     def test_deepseek_shortcut_without_key_exits_before_starting_codex(self):
         with mock.patch.object(router, "keychain_key", return_value=None), \
+                mock.patch.object(router, "log"), \
                 mock.patch.object(router, "subprocess") as proc:
             self.assertEqual(router.run_codex_deepseek(["--yolo"]), 78)
             proc.call.assert_not_called()
