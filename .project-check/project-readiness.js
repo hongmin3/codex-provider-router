@@ -14,6 +14,11 @@ const path = require('path');
 const loadSpecHtml = () => require('./render-spec-html');
 const KIT_TEMPLATE = path.join(__dirname, '../docs/templates/agents-spec-section.md');
 const DEFAULT_TEMPLATE = fs.existsSync(KIT_TEMPLATE) ? KIT_TEMPLATE : path.join(__dirname, 'agents-spec-section.md');
+// CHANGELOG 머리의 형식 예시 블록은 이력으로 읽히지 않는다(렌더러가 fenced 블록을 건너뛴다). 실제 항목이
+// 그 안에 들어가면 조용히 사라지므로, 템플릿 예시와 비교해 경고한다. 기준은 키트 템플릿 한 벌이고,
+// 프로젝트에는 migration이 같은 바이트의 사본(changelog-template.md)을 둔다.
+const KIT_CHANGELOG = path.join(__dirname, '../docs/templates/CHANGELOG.md');
+const DEFAULT_CHANGELOG = fs.existsSync(KIT_CHANGELOG) ? KIT_CHANGELOG : path.join(__dirname, 'changelog-template.md');
 const REQUIRED = ['SPEC.md', 'CHANGELOG.md', 'progress.md', 'AGENTS.md', 'CLAUDE.md'];
 const ID = /^(REQ|NFR|TEST)-[A-Z0-9]+-\d{3}$/;
 const IDS = /\b(?:REQ|NFR|TEST)-[A-Za-z0-9]+-\d+\b/g;
@@ -56,6 +61,24 @@ function inside(root, target) {
   return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
 }
 
+// 첫 버전 제목(`## `) 앞에 나오는 첫 fenced 블록이 형식 예시다. 항목 안의 코드 블록은 예시가 아니다.
+function formatExample(text) {
+  const lines = normalize(text).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) return null;
+    const open = lines[i].match(/^ {0,3}(`{3,}|~{3,})/);
+    if (!open) continue;
+    const body = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const close = lines[j].match(/^ {0,3}(`{3,}|~{3,})\s*$/);
+      if (close && close[1][0] === open[1][0] && close[1].length >= open[1].length) return body;
+      body.push({ line: j + 1, text: lines[j].replace(/\s+$/, '') });
+    }
+    return body;
+  }
+  return null;
+}
+
 function checkProject(projectRoot, options = {}) {
   if (typeof projectRoot !== 'string' || !projectRoot.trim()) throw new Error('Project root is required');
   const root = fs.realpathSync(path.resolve(projectRoot));
@@ -96,6 +119,16 @@ function checkProject(projectRoot, options = {}) {
   else if (!canonicalPresent) error(version ? 'WORKFLOW_INCOMPLETE' : 'WORKFLOW_MISSING', 'AGENTS.md: full canonical SPEC workflow required; marker alone is insufficient');
   const claude = visibleMarkdown(docs['CLAUDE.md'] || '').replace(/`[^`\n]*`/g, '');
   if (!/^\s*@(?:\.\/)?AGENTS\.md\s*$/m.test(claude)) error('CLAUDE_IMPORT_MISSING', 'CLAUDE.md: active @AGENTS.md import missing');
+
+  // 기준 템플릿은 CHANGELOG 내용과 무관하게 항상 읽는다 — 사본이 빠진 bundle을 통과로 보이게 하지 않는다.
+  const expected = formatExample(fs.readFileSync(options.changelogTemplatePath || DEFAULT_CHANGELOG, 'utf8'));
+  if (!expected) throw new Error('Invalid CHANGELOG template: no format example block');
+  const example = docs['CHANGELOG.md'] ? formatExample(docs['CHANGELOG.md']) : null;
+  if (example) {
+    const known = new Set(expected.map(l => l.text));
+    const extra = example.filter(l => l.text.trim() && !known.has(l.text));
+    if (extra.length) warning('CHANGELOG_EXAMPLE_MODIFIED', `CHANGELOG.md:${extra[0].line}: the format example block has ${extra.length} line(s) not in the template (first: "${extra[0].text.trim().slice(0, 80)}"); a fenced block is not read as history, so move real entries under a version heading such as "## [Unreleased]"`);
+  }
 
   const rawSpec = docs['SPEC.md'];
   if (rawSpec?.trim()) {
