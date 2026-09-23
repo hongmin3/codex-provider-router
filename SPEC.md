@@ -93,7 +93,24 @@ Windows DPAPI 네 곳이다. 설치 후 실제 경로 배치는 `USAGE_AND_SPEC.
 ID 규칙: `REQ-<CATEGORY>-NNN`. CATEGORY는 대문자·숫자, NNN은 세 자리.
 한 번 부여한 ID는 재사용하거나 의미를 바꾸지 않는다. 삭제한 ID를 다른 기능에 돌려쓰지 않는다.
 
-### REQ-ROUTE-001
+기능 그룹 — CATEGORY마다 사람이 읽는 이름이다. `docs/SPEC.html`의 기능 목록이 이 이름으로 묶인다.
+
+| 카테고리 | 이름 |
+|---|---|
+| ROUTE | provider 라우팅 |
+| STATE | 상태 관리 |
+| CTX | 작업 맥락 |
+| MODEL | 모델 설정 |
+| CATALOG | 모델 목록 |
+| BALANCE | 잔액 확인 |
+| ERR | 오류 안내 |
+| AIROUTE | 모델 추천 |
+| COST | 비용 한도 |
+| SEC | 보안 |
+| COMPAT | 호환성 |
+| UX | 화면 표시 |
+
+### REQ-ROUTE-001 기존 codex 명령 그대로 사용
 
 #### 목적
 사용자가 명령을 바꾸지 않고 기존 Codex를 그대로 쓰게 한다.
@@ -115,7 +132,7 @@ ID 규칙: `REQ-<CATEGORY>-NNN`. CATEGORY는 대문자·숫자, NNN은 세 자�
 #### 관련 테스트
 (없음)
 
-### REQ-ROUTE-002
+### REQ-ROUTE-002 provider 전환 알림
 
 #### 목적
 provider 전환은 사용자가 모르는 사이에 일어나면 안 된다.
@@ -141,7 +158,7 @@ provider 전환은 사용자가 모르는 사이에 일어나면 안 된다.
 #### 관련 테스트
 TEST-ROUTE-001
 
-### REQ-ROUTE-003
+### REQ-ROUTE-003 잔여 한도 안내 오인 방지
 
 #### 목적
 잔여 한도 안내를 소진으로 오인해 전환하지 않는다.
@@ -170,7 +187,7 @@ OpenAI Codex가 TTY에 출력한 문구.
 #### 관련 테스트
 TEST-ROUTE-002
 
-### REQ-ROUTE-004
+### REQ-ROUTE-004 한도 해제 후 OpenAI 자동 복귀
 
 #### 목적
 한도가 풀리면 사람 개입 없이 OpenAI로 돌아온다.
@@ -189,7 +206,7 @@ TEST-ROUTE-002
 #### 관련 테스트
 TEST-ROUTE-003
 
-### REQ-ROUTE-005
+### REQ-ROUTE-005 DeepSeek 강제 지정
 
 #### 목적
 OpenAI 상태와 무관하게 DeepSeek를 쓰고 싶을 때 한 단어로 지정할 수 있어야 한다.
@@ -217,7 +234,7 @@ DeepSeek Key가 없으면 Codex를 시작하지 않고 안내 후 exit code 78�
 #### 관련 테스트
 TEST-ROUTE-004
 
-### REQ-STATE-001
+### REQ-STATE-001 상태 파일 손상 시 안전 동작
 
 #### 목적
 상태 파일이 깨져도 사용자가 Codex를 못 쓰는 상황이 생기면 안 된다.
@@ -236,7 +253,7 @@ TEST-ROUTE-004
 #### 관련 테스트
 TEST-STATE-001
 
-### REQ-CTX-001
+### REQ-CTX-001 provider 전환 시 작업 맥락 유지
 
 #### 목적
 provider가 바뀌어도 작업 맥락을 잃지 않는다.
@@ -258,7 +275,7 @@ provider가 바뀌어도 작업 맥락을 잃지 않는다.
 #### 관련 테스트
 TEST-CTX-001
 
-### REQ-MODEL-001
+### REQ-MODEL-001 DeepSeek 모델·reasoning 설정 유지
 
 #### 목적
 DeepSeek 모델과 reasoning은 사용자가 정한 값이 다음 실행에서도 유지되어야 한다.
@@ -277,7 +294,7 @@ DeepSeek 모델과 reasoning은 사용자가 정한 값이 다음 실행에서�
 #### 관련 테스트
 TEST-MODEL-001
 
-### REQ-CATALOG-001
+### REQ-CATALOG-001 DeepSeek 모델 목록 자동 갱신
 
 #### 목적
 DeepSeek 모델 목록이 바뀌어도 사용자가 수동으로 추적하지 않게 한다.
@@ -298,7 +315,7 @@ DeepSeek 모델 목록이 바뀌어도 사용자가 수동으로 추적하지 �
 #### 관련 테스트
 TEST-CATALOG-001
 
-### REQ-BALANCE-001
+### REQ-BALANCE-001 DeepSeek 잔액 부족 사전 알림
 
 #### 목적
 DeepSeek 잔액이 떨어져 작업이 끊기기 전에 사용자가 알 수 있어야 한다.
@@ -326,7 +343,7 @@ DeepSeek 잔액이 떨어져 작업이 끊기기 전에 사용자가 알 수 있
 #### 관련 테스트
 TEST-BALANCE-001, TEST-BALANCE-002
 
-### REQ-ERR-001
+### REQ-ERR-001 DeepSeek 실패 안내
 
 #### 목적
 DeepSeek 실패는 사용자가 다음에 무엇을 해야 하는지 알 수 있는 형태로 안내한다.
@@ -349,7 +366,7 @@ DeepSeek 세션의 비정상 exit code와 TTY의 최근 출력.
 #### 관련 테스트
 TEST-ERR-001
 
-### REQ-AIROUTE-001
+### REQ-AIROUTE-001 작업별 모델 추천
 
 #### 목적
 작업 성격에 맞는 모델을 추천하되 실행 여부는 사용자가 정한다.
@@ -372,7 +389,7 @@ TEST-ERR-001
 #### 관련 테스트
 TEST-AIROUTE-001
 
-### REQ-COST-001
+### REQ-COST-001 비용 한도 실행 차단
 
 #### 목적
 설정에 적어 둔 비용 한도가 표시용 값이 아니라 **실제 실행 차단**으로 동작한다. 시간 기반
@@ -415,7 +432,7 @@ TEST-COST-002
 
 ## 6. 비기능 요구사항
 
-### NFR-SEC-001
+### NFR-SEC-001 API Key 안전 보관
 
 DeepSeek API Key는 **process environment 또는 OS 자격증명 저장소**(macOS Keychain의
 `codex-router-deepseek` 항목, Windows는 DPAPI로 암호화한 파일)에서만 읽는다.
@@ -431,7 +448,7 @@ DeepSeek API Key는 **process environment 또는 OS 자격증명 저장소**(mac
 
 이 문서와 `knowledge/`에도 Key 값이나 개인 절대경로를 적지 않는다.
 
-### NFR-COMPAT-001
+### NFR-COMPAT-001 기존 Codex 환경 보존
 
 Router는 기존 Codex 환경을 보존한다. Codex config, ChatGPT 인증, MCP 설정, plugin 설정,
 project trust, OpenAI 모델 선택, 원본 Codex 실행 파일을 임의로 바꾸거나 지우지 않는다.
@@ -446,7 +463,7 @@ project trust, OpenAI 모델 선택, 원본 Codex 실행 파일을 임의로 바
   실행기가 없으면 명확한 오류로 중단한다.
 - 긴급 시 원본 Codex를 절대 경로로 직접 실행해 Router를 우회할 수 있어야 한다.
 
-### NFR-UX-001
+### NFR-UX-001 Codex TUI 화면 보존
 
 Router 때문에 Codex TUI 화면이 깨지지 않는다.
 
@@ -455,7 +472,7 @@ Router 때문에 Codex TUI 화면이 깨지지 않는다.
 - Codex binary가 그리는 화면(예: TUI의 `/status`)에 wrapper가 줄을 덧붙이지 않는다. Router
   안내는 자체 배너와 stderr로만 낸다.
 
-### NFR-COST-001
+### NFR-COST-001 라우팅 추가 비용 없음
 
 라우팅 자체가 유료 호출을 늘리지 않는다.
 

@@ -1,6 +1,6 @@
 ## 사양 기반 개발 (SPEC)
 
-<!-- spec-workflow: v2 -->
+<!-- spec-workflow: v3 -->
 
 `SPEC.md`가 이 프로젝트가 **어떻게 동작해야 하는가**의 기준이다. 코드의 현재 동작은 사양이
 아니다. 아래는 상위 기준이고, 실제 절차(계획·테스트·검증)는 기존 Skill을 그대로 쓴다.
@@ -29,6 +29,9 @@
 `SPEC.md`)를 갱신하고 저장소를 커밋·푸시한다. 사용자 요청을 기다리지 않으며 하위 프로젝트
 세션에도 동일하게 적용한다. 게이트·CI·라이브 세션 충돌 회피는 설치된 키트의 공통 `AGENTS.md`
 push 규칙을 따른다.
+`SPEC.md`나 `CHANGELOG.md`를 고쳤으면 `node .project-check/render-spec-html.js .`로 사람이 읽는
+`docs/SPEC.html`을 다시 만들어 같은 커밋에 넣는다. 이 HTML은 두 문서의 사본(기능 목록·요구사항별
+변경 이력 포함)이므로 직접 고치지 않으며, 준비 검사가 낡은 HTML을 실패로 잡는다.
 
 **SPEC / CODE 불일치** — 조용히 맞추지 말고 다음 형식으로 보고한다.
 
@@ -45,7 +48,8 @@ Action: SPEC 수정 / CODE 수정 / 사용자 확인 필요
 코드의 현재 상태를 정당화하려고 SPEC을 고치지 않는다.
 
 **ID 규칙** — `REQ-<CATEGORY>-NNN`, `NFR-<CATEGORY>-NNN`, `TEST-<CATEGORY>-NNN`.
-CATEGORY는 대문자·숫자, NNN은 세 자리. 한 번 부여한 ID는 재사용하거나 의미를 바꾸지 않고,
+CATEGORY는 대문자·숫자, NNN은 세 자리. 제목 줄에는 ID 뒤에 기능 이름을 쓴다
+(`### REQ-EXPORT-001 CSV 저장`). CHANGELOG 항목 앞에 ID를 붙이면 그 요구사항의 변경 이력으로 모인다. 한 번 부여한 ID는 재사용하거나 의미를 바꾸지 않고,
 삭제한 ID를 다른 기능에 돌려쓰지 않는다. 추적은 테스트 쪽에 남긴다(예: 테스트 위에
 `Validates: REQ-QUERY-001`). 검색용 주석을 모든 함수에 강제로 달지 않는다.
 

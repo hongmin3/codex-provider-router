@@ -7,6 +7,11 @@
 // or that tests ran. It does not load source code, private configuration or knowledge.
 const fs = require('fs');
 const path = require('path');
+// 사람이 읽는 docs/SPEC.html의 신선도는 그 파일을 만드는 렌더러의 해시 규칙으로 판정한다.
+// 두 파일은 키트 tools/와 프로젝트 .project-check/에 나란히 배포된다. 렌더러가 없으면 조용히
+// 건너뛰지 않고 checker 오류(CLI exit 2)로 멈춘다 — 빠진 bundle을 통과나 일반 실패(1)로 보이게
+// 하지 않는다. 그래서 모듈 load가 아니라 검사 안에서 require한다.
+const loadSpecHtml = () => require('./render-spec-html');
 const KIT_TEMPLATE = path.join(__dirname, '../docs/templates/agents-spec-section.md');
 const DEFAULT_TEMPLATE = fs.existsSync(KIT_TEMPLATE) ? KIT_TEMPLATE : path.join(__dirname, 'agents-spec-section.md');
 const REQUIRED = ['SPEC.md', 'CHANGELOG.md', 'progress.md', 'AGENTS.md', 'CLAUDE.md'];
@@ -105,6 +110,7 @@ function checkProject(projectRoot, options = {}) {
     if (PLACEHOLDER.test(core)) error('SPEC_INCOMPLETE', 'SPEC.md: unresolved placeholder in current specification');
     if ([13, 14].some(n => PLACEHOLDER.test(sec.get(n) || ''))) warning('SPEC_OPEN_QUESTIONS', 'SPEC.md: open questions or future proposals remain; review their effect on the current scope');
     const defined = new Map();
+    const untitled = [];
     const headings = [...spec.matchAll(/^#{2,4}\s+((?:REQ|NFR|TEST)-\S+)[^\n]*$/gm)];
     for (let i = 0; i < headings.length; i++) {
       const id = headings[i][1].replace(/[.,:;]+$/, '');
@@ -114,7 +120,12 @@ function checkProject(projectRoot, options = {}) {
       if (!body || !body.replace(/^#{1,6}[^\n]*$/gm, '').trim()) error('REQUIREMENT_EMPTY', `SPEC.md: ${id} has no description`);
       defined.set(id, body);
       result.counts.requirements++;
+      // 번호만 보고 무슨 기능인지 알 수 있어야 한다: "### REQ-EXPORT-001 CSV 저장". 기존 SPEC을
+      // 막지 않도록 경고로만 알린다. TEST 절차는 검증 대상 ID가 이름 역할을 하므로 제외한다.
+      if (!id.startsWith('TEST-') && !headings[i][0].replace(/^#{2,4}\s+\S+/, '').replace(/^[.,:;\s]+/, '').trim()) untitled.push(id);
     }
+    const named = [...defined.keys()].filter(id => !id.startsWith('TEST-')).length;
+    if (untitled.length) warning('REQUIREMENT_TITLE_MISSING', `SPEC.md: ${untitled.length} of ${named} REQ/NFR headings have no name (e.g. ${untitled.slice(0, 3).join(', ')}); write "### ${untitled[0]} <기능 이름>" so the ID alone tells what it does`);
     if (![...defined.keys()].some(id => id.startsWith('REQ-'))) error('REQUIREMENT_MISSING', 'SPEC.md: no functional REQ definition');
     const implPaths = new Set();
     const testPaths = new Set(ticks(spec).filter(testToken));
@@ -158,6 +169,13 @@ function checkProject(projectRoot, options = {}) {
         }
       }
     }
+    const specHtml = loadSpecHtml();
+    const html = specHtml.status(root);
+    const regenerate = `run ${specHtml.REGENERATE}`;
+    if (html.status === 'MISSING') error('SPEC_HTML_MISSING', `${html.output}: human-readable SPEC view missing; ${regenerate}`);
+    else if (html.status === 'STALE') error('SPEC_HTML_STALE', `${html.output}: generated from an older SPEC.md; ${regenerate}`);
+    else if (html.status === 'UNMANAGED') error('SPEC_HTML_UNMANAGED', `${html.output}: not generated from SPEC.md (or a symlink); move it aside, then ${regenerate}`);
+    else if (html.version !== specHtml.RENDERER_VERSION) warning('SPEC_HTML_RENDERER_OUTDATED', `${html.output}: rendered by ${html.version}; ${regenerate} for the ${specHtml.RENDERER_VERSION} layout`);
     if (result.counts.testPaths === 0) warning('NO_TEST_FILE_REFERENCES', 'SPEC.md: no automated test file references inspected; documented TEST procedures need actual execution evidence');
   }
   return result;
