@@ -3,7 +3,7 @@
   "files": {
     "project-readiness.js": "7a2109c6ed81c7585bedeb80b32b9fc090757886842448988c1348467794c3f9",
     "agents-spec-section.md": "0c19bc80ae63bac9ccd926d31e0de565fe695c4bc51d6154c89bcc08731e9bb7",
-    "render-spec-html.js": "e17b91cf40acafdc485b96e4fd14074eba2de0fbd8e7979156e1dd9e4877aaa5"
+    "render-spec-html.js": "edc070ac092fe90aa7b68e285a5b26e409b394829c4fa74049236e2005f7314d"
   },
   "projectFiles": {
     ".github/workflows/project-readiness.yml": "239453c90ee891c4ffb51345ac3a570d07b3b88fb18afee0f10c9693b5df5c8e"

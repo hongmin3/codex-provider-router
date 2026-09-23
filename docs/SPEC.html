@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="generator" content="automation-workspace render-spec-html v2">
-<meta name="spec-html-renderer" content="v2">
-<meta name="spec-source-sha256" content="080116e3aef7b3e3ac267e2d28a141ec6db4e61945f95777a26454d1e51d5a3d">
+<meta name="generator" content="automation-workspace render-spec-html v3">
+<meta name="spec-html-renderer" content="v3">
+<meta name="spec-source-sha256" content="f95fa3adbc8a2ec40b7492f65c2e572e32541910b6569e8502dd01afd9d320ee">
 <title>Codex Provider Router 사양서</title>
 <style>:root{--bg:#f7f8fa;--panel:#fff;--text:#1d2330;--muted:#5d6678;--line:#e2e6ee;--accent:#2f6fde;--code:#f1f3f7;
 --req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;color-scheme:light}
@@ -47,6 +47,12 @@ details.history ul{margin:6px 0;padding-left:18px}.hist{color:var(--muted);font-
 tr.group th{background:var(--bg);text-align:left;font-size:14px;padding-top:12px}.gcode{font:600 12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:4px}
 table.index td:first-child{white-space:nowrap}table.index td:nth-child(2){min-width:10em}table.index td:nth-child(4){min-width:13em}.untitled{color:var(--muted);font-style:italic}
 .toc .toc-id span{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:var(--text)}
+figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.flow .node rect{fill:var(--panel);stroke:var(--accent);stroke-width:1.5}
+.flow text{font-size:13px;fill:var(--text);text-anchor:middle;dominant-baseline:central}
+.flow .edge{fill:none;stroke:var(--muted);stroke-width:1.5}.flow .edge.back{stroke-dasharray:5 4}.flow marker path{fill:var(--muted)}
+.flow .elabel{font-size:12px;fill:var(--muted);paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round}
+.nohist{color:var(--muted)}
 main img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
 .table-wrap{overflow-x:auto;margin:10px 0}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
@@ -295,7 +301,7 @@ TTY여도 routing 없이 인자를 그대로 넘기고, 강제 지정 없는 비
 </section>
 <section class="card kind-req" id="REQ-ROUTE-002">
 <h3><span class="idtag">REQ-ROUTE-002</span> provider 전환 알림</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>provider 전환은 사용자가 모르는 사이에 일어나면 안 된다.</p>
 <h4>선행 조건</h4>
@@ -319,7 +325,7 @@ TTY여도 routing 없이 인자를 그대로 넘기고, 강제 지정 없는 비
 </section>
 <section class="card kind-req" id="REQ-ROUTE-003">
 <h3><span class="idtag">REQ-ROUTE-003</span> 잔여 한도 안내 오인 방지</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>잔여 한도 안내를 소진으로 오인해 전환하지 않는다.</p>
 <h4>입력</h4>
@@ -346,7 +352,7 @@ Codex <code>/status</code> 화면의 <code>Weekly limit: 70% left</code> 같은 
 </section>
 <section class="card kind-req" id="REQ-ROUTE-004">
 <h3><span class="idtag">REQ-ROUTE-004</span> 한도 해제 후 OpenAI 자동 복귀</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>한도가 풀리면 사람 개입 없이 OpenAI로 돌아온다.</p>
 <h4>동작</h4>
@@ -365,7 +371,7 @@ Codex <code>/status</code> 화면의 <code>Weekly limit: 70% left</code> 같은 
 </section>
 <section class="card kind-req" id="REQ-ROUTE-005">
 <h3><span class="idtag">REQ-ROUTE-005</span> DeepSeek 강제 지정</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#REQ-ROUTE-002">REQ-ROUTE-002</a>, <a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#REQ-ROUTE-002">REQ-ROUTE-002</a>, <a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>OpenAI 상태와 무관하게 DeepSeek를 쓰고 싶을 때 한 단어로 지정할 수 있어야 한다.</p>
 <h4>입력</h4>
@@ -391,7 +397,7 @@ fallback 모델·reasoning을 강제한다. <code>--</code> 뒤의 인자는 pro
 </section>
 <section class="card kind-req" id="REQ-STATE-001">
 <h3><span class="idtag">REQ-STATE-001</span> 상태 파일 손상 시 안전 동작</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>상태 파일이 깨져도 사용자가 Codex를 못 쓰는 상황이 생기면 안 된다.</p>
 <h4>동작</h4>
@@ -440,7 +446,7 @@ DeepSeek Key·모델 설정을 지우지 않는다.</li>
 </section>
 <section class="card kind-req" id="REQ-MODEL-001">
 <h3><span class="idtag">REQ-MODEL-001</span> DeepSeek 모델·reasoning 설정 유지</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>DeepSeek 모델과 reasoning은 사용자가 정한 값이 다음 실행에서도 유지되어야 한다.</p>
 <h4>동작</h4>
@@ -459,7 +465,7 @@ DeepSeek Key·모델 설정을 지우지 않는다.</li>
 </section>
 <section class="card kind-req" id="REQ-CATALOG-001">
 <h3><span class="idtag">REQ-CATALOG-001</span> DeepSeek 모델 목록 자동 갱신</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>DeepSeek 모델 목록이 바뀌어도 사용자가 수동으로 추적하지 않게 한다.</p>
 <h4>동작</h4>
@@ -480,7 +486,7 @@ DeepSeek Key·모델 설정을 지우지 않는다.</li>
 </section>
 <section class="card kind-req" id="REQ-BALANCE-001">
 <h3><span class="idtag">REQ-BALANCE-001</span> DeepSeek 잔액 부족 사전 알림</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code>, <code>src/model_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code>, <code>src/model_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>DeepSeek 잔액이 떨어져 작업이 끊기기 전에 사용자가 알 수 있어야 한다.</p>
 <h4>동작</h4>
@@ -508,7 +514,7 @@ DeepSeek Key·모델 설정을 지우지 않는다.</li>
 </section>
 <section class="card kind-req" id="REQ-ERR-001">
 <h3><span class="idtag">REQ-ERR-001</span> DeepSeek 실패 안내</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>DeepSeek 실패는 사용자가 다음에 무엇을 해야 하는지 알 수 있는 형태로 안내한다.</p>
 <h4>입력</h4>
@@ -530,7 +536,7 @@ DeepSeek Key·모델 설정을 지우지 않는다.</li>
 </section>
 <section class="card kind-req" id="REQ-AIROUTE-001">
 <h3><span class="idtag">REQ-AIROUTE-001</span> 작업별 모델 추천</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/model_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/model_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <h4>목적</h4>
 <p>작업 성격에 맞는 모델을 추천하되 실행 여부는 사용자가 정한다.</p>
 <h4>동작</h4>
@@ -617,7 +623,7 @@ provider라 지출 상한은 잔액과 비용 한도가 이미 맡고, 시간 �
 <h2>6. 비기능 요구사항</h2>
 <section class="card kind-nfr" id="NFR-SEC-001">
 <h3><span class="idtag">NFR-SEC-001</span> API Key 안전 보관</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code>, <code>scripts/install.sh</code>, <code>scripts/install.ps1</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code>, <code>scripts/install.sh</code>, <code>scripts/install.ps1</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <p>DeepSeek API Key는 <strong>process environment 또는 OS 자격증명 저장소</strong>(macOS Keychain의
 <code>codex-router-deepseek</code> 항목, Windows는 DPAPI로 암호화한 파일)에서만 읽는다.</p>
 <ul>
@@ -658,7 +664,7 @@ shim을 제외한 다음 <code>codex</code> 실행기를 PATH에서 찾아 경�
 </section>
 <section class="card kind-nfr" id="NFR-UX-001">
 <h3><span class="idtag">NFR-UX-001</span> Codex TUI 화면 보존</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-UX-001">TEST-UX-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#REQ-BALANCE-001">REQ-BALANCE-001</a>, <a class="idref" href="#TEST-UX-001">TEST-UX-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-UX-001">TEST-UX-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#REQ-BALANCE-001">REQ-BALANCE-001</a>, <a class="idref" href="#TEST-UX-001">TEST-UX-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <p>Router 때문에 Codex TUI 화면이 깨지지 않는다.</p>
 <ul>
 <li>자식 PTY에 실제 터미널의 rows/columns를 복사하고, 터미널 크기가 바뀌면 <code>SIGWINCH</code>를 받아
@@ -669,7 +675,7 @@ shim을 제외한 다음 <code>codex</code> 실행기를 PATH에서 찾아 경�
 </section>
 <section class="card kind-nfr" id="NFR-COST-001">
 <h3><span class="idtag">NFR-COST-001</span> 라우팅 추가 비용 없음</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/model_router.py</code>, <code>config/config.toml</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-COST-001">TEST-COST-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-COST-001">TEST-COST-001</a></span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/model_router.py</code>, <code>config/config.toml</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-COST-001">TEST-COST-001</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-COST-001">TEST-COST-001</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
 <p>라우팅 자체가 유료 호출을 늘리지 않는다.</p>
 <ul>
 <li><code>ai</code>의 LLM 분류기는 기본 OFF다. 이때 라우팅에 드는 추가 LLM token은 0이다.</li>

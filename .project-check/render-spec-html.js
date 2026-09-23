@@ -14,7 +14,8 @@ const path = require('path');
 const crypto = require('crypto');
 
 // v2: 기능 목록·카드 메타(상태·구현·테스트·역참조)·요구사항별 변경 이력·로컬 이미지.
-const RENDERER_VERSION = 'v2';
+// v3: ```flow 흐름도(inline SVG), 이력이 없는 요구사항의 "기록 없음" 표시.
+const RENDERER_VERSION = 'v3';
 const OUTPUT = 'docs/SPEC.html';
 const REGENERATE = 'node .project-check/render-spec-html.js .';
 const ID = /\b(?:REQ|NFR|TEST)-[A-Z0-9]+-\d{3}\b/g;
@@ -222,6 +223,8 @@ function renderBlocks(lines, ctx, opts = {}) {
       i++;
       while (i < lines.length && !(lines[i].trim().startsWith(fence[0].repeat(fence.length)) && lines[i].trim().replace(new RegExp('^\\' + fence[0] + '+'), '').trim() === '')) body.push(lines[i++]);
       i++;
+      const diagram = m[2] === 'flow' ? renderFlow(body, ctx) : null;
+      if (diagram) { out.push(diagram); continue; }
       const lang = m[2] ? ` class="language-${esc(m[2])}"` : '';
       out.push(`<pre><code${lang}>${esc(body.join('\n'))}${body.length ? '\n' : ''}</code></pre>`);
       continue;
@@ -293,6 +296,103 @@ function renderBlocks(lines, ctx, opts = {}) {
   }
   if (opts.top) closeTo(0);
   return out;
+}
+
+// ---- flow diagram -------------------------------------------------------------------------
+
+// ```flow 블록을 inline SVG 흐름도로 그린다. 외부 JS(Mermaid 등) 없이 결정적으로 배치한다.
+// 문법: 한 줄에 `A -> B -> C`, 이름표가 있는 화살표는 `A -(실패)-> B`. 같은 글자면 같은 상자다.
+// 배치: 위에서 아래로 층을 쌓는다. 층 = 앞으로 가는 화살표 기준 최장 경로, 같은 층은 처음 나온 순서.
+// 되돌아가는 화살표(순환)는 층을 만들지 않고 오른쪽 통로로 점선을 긋는다. 단순 흐름용이라
+// 교차 최소화는 하지 않는다. 문법에 맞지 않는 줄이 하나라도 있으면 null — 호출자가 코드 블록으로 둔다.
+const FLOW = { h: 36, minW: 72, pad: 24, gapX: 24, gapY: 44, margin: 8, lane: 12, laneStep: 10 };
+const ARROW = /\s*-(?:\(([^()\n]*)\)-)?>\s*/;
+const flowNum = n => String(Math.round(n * 10) / 10);
+// 글자 폭 추정(13px 글꼴): 한글·한자·전각은 13, 그 밖은 7.5. 브라우저 측정 없이 같은 입력이면 같은 폭이다.
+const labelWidth = text => [...text].reduce((w, ch) => w + (/[ᄀ-ᇿ⺀-꓏가-힣豈-﫿＀-￯]/.test(ch) ? 13 : 7.5), 0);
+
+function parseFlow(lines) {
+  const nodes = [], index = new Map(), edges = [];
+  const node = label => { if (!index.has(label)) { index.set(label, nodes.length); nodes.push({ label }); } return index.get(label); };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const parts = line.split(new RegExp(ARROW.source));
+    // split은 [노드, 이름표, 노드, 이름표, 노드 …]를 돌려준다. 노드가 둘 미만이거나 빈 노드가 있으면 문법 밖이다.
+    if (parts.length < 3) return null;
+    const names = parts.filter((_, k) => k % 2 === 0).map(t => t.trim());
+    if (names.some(t => !t)) return null;
+    for (let k = 0; k + 1 < names.length; k++) edges.push({ from: node(names[k]), to: node(names[k + 1]), label: (parts[2 * k + 1] || '').trim() });
+  }
+  return nodes.length ? { nodes, edges } : null;
+}
+
+function renderFlow(lines, ctx) {
+  const g = parseFlow(lines);
+  if (!g) return null;
+  const { nodes, edges } = g;
+  // 처음 나온 순서로 DFS 하며 스택 위의 노드로 가는 화살표를 되돌림으로 분류한다.
+  const state = nodes.map(() => 0), out = nodes.map(() => []);
+  edges.forEach((e, k) => out[e.from].push(k));
+  const visit = v => {
+    state[v] = 1;
+    for (const k of out[v]) {
+      const t = edges[k].to;
+      if (state[t] === 1) edges[k].back = true;
+      else if (state[t] === 0) visit(t);
+    }
+    state[v] = 2;
+  };
+  nodes.forEach((_, v) => { if (!state[v]) visit(v); });
+  // 최장 경로 층: 되돌림을 뺀 그래프는 DAG이므로 층이 더 바뀌지 않을 때까지 완화하면 끝난다.
+  const rank = nodes.map(() => 0);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const e of edges) if (!e.back && rank[e.to] < rank[e.from] + 1) { rank[e.to] = rank[e.from] + 1; changed = true; }
+  }
+  const rows = [];
+  nodes.forEach((n, v) => { n.w = Math.max(FLOW.minW, Math.ceil(labelWidth(n.label)) + FLOW.pad); (rows[rank[v]] = rows[rank[v]] || []).push(v); });
+  const rowWidth = row => row.reduce((w, v) => w + nodes[v].w, 0) + FLOW.gapX * (row.length - 1);
+  const maxRow = Math.max(...rows.map(rowWidth));
+  rows.forEach((row, r) => {
+    let x = FLOW.margin + (maxRow - rowWidth(row)) / 2;
+    for (const v of row) { Object.assign(nodes[v], { x, y: FLOW.margin + r * (FLOW.h + FLOW.gapY) }); x += nodes[v].w + FLOW.gapX; }
+  });
+  const backs = edges.filter(e => e.back).length;
+  const width = maxRow + 2 * FLOW.margin + (backs ? FLOW.lane + FLOW.laneStep * backs : 0);
+  const height = 2 * FLOW.margin + rows.length * FLOW.h + (rows.length - 1) * FLOW.gapY;
+  const id = `flow-arrow-${++ctx.flows}`;
+  const cx = n => n.x + n.w / 2, cy = n => n.y + FLOW.h / 2;
+  const svg = [];
+  let lane = 0;
+  for (const e of edges) {
+    const a = nodes[e.from], b = nodes[e.to];
+    let d, lx, ly;
+    if (e.back) {
+      const x = FLOW.margin + maxRow + FLOW.lane + FLOW.laneStep * lane++;
+      const self = a === b ? FLOW.h / 4 : 0;
+      d = `M${flowNum(a.x + a.w)} ${flowNum(cy(a) + self)} H${flowNum(x)} V${flowNum(cy(b) - self)} H${flowNum(b.x + b.w)}`;
+      lx = x; ly = (cy(a) + cy(b)) / 2;
+    } else {
+      const [x1, y1, x2, y2] = [cx(a), a.y + FLOW.h, cx(b), b.y];
+      d = `M${flowNum(x1)} ${flowNum(y1)} L${flowNum(x2)} ${flowNum(y2)}`;
+      lx = (x1 + x2) / 2; ly = (y1 + y2) / 2;
+    }
+    svg.push(`<path class="edge${e.back ? ' back' : ''}" d="${d}" marker-end="url(#${id})"/>` +
+      (e.label ? `<text class="elabel" x="${flowNum(lx)}" y="${flowNum(ly)}">${esc(e.label)}</text>` : ''));
+  }
+  for (const n of nodes) {
+    svg.push(`<g class="node"><rect x="${flowNum(n.x)}" y="${flowNum(n.y)}" width="${n.w}" height="${FLOW.h}" rx="8"/><text x="${flowNum(cx(n))}" y="${flowNum(cy(n))}">${esc(n.label)}</text></g>`);
+  }
+  const alt = edges.map(e => `${nodes[e.from].label} → ${nodes[e.to].label}`).join(', ');
+  return [
+    '<figure class="flow">',
+    `<svg viewBox="0 0 ${flowNum(width)} ${height}" width="${flowNum(width)}" height="${height}" role="img" aria-label="${esc(alt)}">`,
+    `<defs><marker id="${id}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z"/></marker></defs>`,
+    ...svg,
+    '</svg>',
+    '</figure>',
+  ].join('\n');
 }
 
 // ---- document -----------------------------------------------------------------------------
@@ -383,6 +483,9 @@ function cardMeta(id, ctx) {
   const refs = [...(ctx.refs[id] || [])].sort();
   if (refs.length) parts.push(`<span class="meta"><b>참조됨</b> ${refs.map(r => `<a class="idref" href="#${r}">${r}</a>`).join(', ')}</span>`);
   const hist = ctx.history.get(id) || [];
+  // 이력이 빈 요구사항은 빈칸이 누락처럼 보이므로 "기록 없음"을 밝힌다. 판단 근거(CHANGELOG)가 없거나
+  // 검증 절차(TEST)이면 말하지 않는다.
+  if (!hist.length && ctx.hasChangelog && !id.startsWith('TEST-')) parts.push('<span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span>');
   let details = '';
   if (hist.length) {
     details = `<details class="history"><summary>변경 이력 ${hist.length}</summary>\n<ul>\n` +
@@ -425,7 +528,7 @@ function render(markdown, options = {}) {
   const lines = text.replace(/\t/g, '    ').split('\n');
   const { trace, groups } = scanTables(lines);
   const ctx = { ids: definedIds(lines), stack: [], toc: [], opened: new Set(), statusCounts: {}, meta: null, title: null, titleSeen: false, parts: 0,
-    card: null, refs: {}, trace, groups, history: changelogHistory(options.changelog || '') };
+    card: null, refs: {}, trace, groups, history: changelogHistory(options.changelog || ''), hasChangelog: Boolean(options.changelog), flows: 0 };
   ctx.chaptersSeen = () => ctx.toc.some(t => t.startsWith('<li class="toc-2"'));
   const rendered = renderBlocks(lines, ctx, { top: true }).join('\n');
   // 카드 머리는 본문 전체를 읽은 뒤에야 역참조를 알 수 있으므로 자리표시자를 마지막에 채운다.
@@ -591,6 +694,12 @@ details.history ul{margin:6px 0;padding-left:18px}.hist{color:var(--muted);font-
 tr.group th{background:var(--bg);text-align:left;font-size:14px;padding-top:12px}.gcode{font:600 12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:4px}
 table.index td:first-child{white-space:nowrap}table.index td:nth-child(2){min-width:10em}table.index td:nth-child(4){min-width:13em}.untitled{color:var(--muted);font-style:italic}
 .toc .toc-id span{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:var(--text)}
+figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.flow .node rect{fill:var(--panel);stroke:var(--accent);stroke-width:1.5}
+.flow text{font-size:13px;fill:var(--text);text-anchor:middle;dominant-baseline:central}
+.flow .edge{fill:none;stroke:var(--muted);stroke-width:1.5}.flow .edge.back{stroke-dasharray:5 4}.flow marker path{fill:var(--muted)}
+.flow .elabel{font-size:12px;fill:var(--muted);paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round}
+.nohist{color:var(--muted)}
 main img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
 .table-wrap{overflow-x:auto;margin:10px 0}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
