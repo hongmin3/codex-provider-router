@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="generator" content="automation-workspace render-spec-html v3">
-<meta name="spec-html-renderer" content="v3">
-<meta name="spec-source-sha256" content="b6dc5b293f8b3e185817095786704d7f689927b7728746df6b5d0a97bc16b1ac">
+<meta name="generator" content="automation-workspace render-spec-html v4">
+<meta name="spec-html-renderer" content="v4">
+<meta name="spec-source-sha256" content="49b7cc25245bdf2dd2ee95c21aa743407dd4b42809e657753c27a911b6a7b3b5">
 <title>Codex Provider Router 사양서</title>
 <style>:root{--bg:#f7f8fa;--panel:#fff;--text:#1d2330;--muted:#5d6678;--line:#e2e6ee;--accent:#2f6fde;--code:#f1f3f7;
 --req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;color-scheme:light}
@@ -47,6 +47,7 @@ details.history ul{margin:6px 0;padding-left:18px}.hist{color:var(--muted);font-
 tr.group th{background:var(--bg);text-align:left;font-size:14px;padding-top:12px}.gcode{font:600 12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:4px}
 table.index td:first-child{white-space:nowrap}table.index td:nth-child(2){min-width:10em}table.index td:nth-child(4){min-width:13em}.untitled{color:var(--muted);font-style:italic}
 .toc .toc-id span{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:var(--text)}
+.toc a.active{background:var(--code);color:var(--accent);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}.toc a.in-chapter{color:var(--accent)}
 figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-width:100%;height:auto;margin:0 auto}
 .flow .node rect{fill:var(--panel);stroke:var(--accent);stroke-width:1.5}
 .flow text{font-size:13px;fill:var(--text);text-anchor:middle;dominant-baseline:central}
@@ -1150,6 +1151,28 @@ Key 파일이 남고 경로만 안내한다. 이것이 허용되는 동작인지
 </div>
 <footer>이 페이지는 <code>SPEC.md</code>에서 생성된 사본입니다. 직접 고치지 말고 <code>SPEC.md</code>를 고친 뒤 <code>node .project-check/render-spec-html.js .</code>를 실행하세요.</footer>
 <script>(function(){var f=document.getElementById('toc-filter');if(!f)return;f.addEventListener('input',function(){var q=f.value.trim().toLowerCase();
-document.querySelectorAll('.toc li').forEach(function(li){li.classList.toggle('hidden',q!==''&&li.textContent.toLowerCase().indexOf(q)<0);});});})();</script>
+document.querySelectorAll('.toc li').forEach(function(li){li.classList.toggle('hidden',q!==''&&li.textContent.toLowerCase().indexOf(q)<0);});});})();
+function activeIndex(tops, offset, atBottom) {
+  if (atBottom && tops.length) return tops.length - 1;
+  var found = -1;
+  for (var i = 0; i < tops.length; i++) if (tops[i] <= offset) found = i;
+  return found;
+}
+(function(){var toc=document.querySelector('.toc');if(!toc)return;
+var links=[].slice.call(toc.querySelectorAll('a[href^="#"]'));
+var targets=links.map(function(a){return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));});
+var current=-2;
+function chapterOf(i){for(var j=i;j>=0;j--)if(links[j].parentNode.classList.contains('toc-2'))return j;return -1;}
+// requestAnimationFrame에 기대지 않는다 — 숨은 탭에서는 실행되지 않아 표시가 멈춘다. 링크 수십 개의 위치만 읽으므로 스크롤마다 계산해도 가볍다.
+function update(){
+var tops=targets.map(function(t){return t?t.getBoundingClientRect().top:Infinity;});
+var doc=document.documentElement,bottom=window.innerHeight+window.pageYOffset>=doc.scrollHeight-2;
+var i=activeIndex(tops,96,bottom);if(i===current)return;current=i;
+links.forEach(function(a){a.classList.remove('active');a.classList.remove('in-chapter');a.removeAttribute('aria-current');});
+if(i<0)return;var a=links[i];a.classList.add('active');a.setAttribute('aria-current','location');
+var c=chapterOf(i);if(c>=0&&c!==i)links[c].classList.add('in-chapter');
+if(toc.scrollHeight>toc.clientHeight){var r=a.getBoundingClientRect(),t=toc.getBoundingClientRect();
+if(r.top<t.top+40||r.bottom>t.bottom-8)toc.scrollTop+=r.top-t.top-toc.clientHeight/3;}}
+window.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);window.addEventListener('hashchange',update);update();})();</script>
 </body>
 </html>

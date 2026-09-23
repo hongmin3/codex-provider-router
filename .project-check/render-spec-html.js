@@ -15,7 +15,8 @@ const crypto = require('crypto');
 
 // v2: 기능 목록·카드 메타(상태·구현·테스트·역참조)·요구사항별 변경 이력·로컬 이미지.
 // v3: ```flow 흐름도(inline SVG), 이력이 없는 요구사항의 "기록 없음" 표시.
-const RENDERER_VERSION = 'v3';
+// v4: 지금 읽는 절·요구사항을 왼쪽 목차에 표시(scroll spy, aria-current).
+const RENDERER_VERSION = 'v4';
 const OUTPUT = 'docs/SPEC.html';
 const REGENERATE = 'node .project-check/render-spec-html.js .';
 const ID = /\b(?:REQ|NFR|TEST)-[A-Z0-9]+-\d{3}\b/g;
@@ -694,6 +695,7 @@ details.history ul{margin:6px 0;padding-left:18px}.hist{color:var(--muted);font-
 tr.group th{background:var(--bg);text-align:left;font-size:14px;padding-top:12px}.gcode{font:600 12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:4px}
 table.index td:first-child{white-space:nowrap}table.index td:nth-child(2){min-width:10em}table.index td:nth-child(4){min-width:13em}.untitled{color:var(--muted);font-style:italic}
 .toc .toc-id span{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:var(--text)}
+.toc a.active{background:var(--code);color:var(--accent);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}.toc a.in-chapter{color:var(--accent)}
 figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-width:100%;height:auto;margin:0 auto}
 .flow .node rect{fill:var(--panel);stroke:var(--accent);stroke-width:1.5}
 .flow text{font-size:13px;fill:var(--text);text-anchor:middle;dominant-baseline:central}
@@ -715,12 +717,39 @@ footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);f
 @media print{.toc,footer{display:none}.layout{display:block;padding:0}.chapter{break-inside:auto;border:0}.card{break-inside:avoid}body{background:#fff}}
 `.trim();
 
+// 지금 읽는 곳 = 화면 위쪽 기준선(offset)을 이미 지난 마지막 절. 맨 위에서는 -1(표시 없음),
+// 페이지 끝에 닿으면 마지막 절(짧은 마지막 절은 기준선에 닿기 전에 스크롤이 끝난다).
+// 페이지 스크립트에 이 함수의 소스를 그대로 넣는다 — 테스트한 판정과 브라우저의 판정이 같은 코드다.
+function activeIndex(tops, offset, atBottom) {
+  if (atBottom && tops.length) return tops.length - 1;
+  var found = -1;
+  for (var i = 0; i < tops.length; i++) if (tops[i] <= offset) found = i;
+  return found;
+}
+
 const SCRIPT = `
 (function(){var f=document.getElementById('toc-filter');if(!f)return;f.addEventListener('input',function(){var q=f.value.trim().toLowerCase();
 document.querySelectorAll('.toc li').forEach(function(li){li.classList.toggle('hidden',q!==''&&li.textContent.toLowerCase().indexOf(q)<0);});});})();
+${activeIndex.toString()}
+(function(){var toc=document.querySelector('.toc');if(!toc)return;
+var links=[].slice.call(toc.querySelectorAll('a[href^="#"]'));
+var targets=links.map(function(a){return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));});
+var current=-2;
+function chapterOf(i){for(var j=i;j>=0;j--)if(links[j].parentNode.classList.contains('toc-2'))return j;return -1;}
+// requestAnimationFrame에 기대지 않는다 — 숨은 탭에서는 실행되지 않아 표시가 멈춘다. 링크 수십 개의 위치만 읽으므로 스크롤마다 계산해도 가볍다.
+function update(){
+var tops=targets.map(function(t){return t?t.getBoundingClientRect().top:Infinity;});
+var doc=document.documentElement,bottom=window.innerHeight+window.pageYOffset>=doc.scrollHeight-2;
+var i=activeIndex(tops,96,bottom);if(i===current)return;current=i;
+links.forEach(function(a){a.classList.remove('active');a.classList.remove('in-chapter');a.removeAttribute('aria-current');});
+if(i<0)return;var a=links[i];a.classList.add('active');a.setAttribute('aria-current','location');
+var c=chapterOf(i);if(c>=0&&c!==i)links[c].classList.add('in-chapter');
+if(toc.scrollHeight>toc.clientHeight){var r=a.getBoundingClientRect(),t=toc.getBoundingClientRect();
+if(r.top<t.top+40||r.bottom>t.bottom-8)toc.scrollTop+=r.top-t.top-toc.clientHeight/3;}}
+window.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);window.addEventListener('hashchange',update);update();})();
 `.trim();
 
-module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write };
+module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write, activeIndex };
 
 if (require.main === module) {
   try { process.exitCode = main(process.argv.slice(2)); }
