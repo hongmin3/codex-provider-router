@@ -208,3 +208,9 @@
 {"v":1,"ts":"2026-09-21T16:24:36Z","run":"develop-docs-sync-push-20260922-d72818","activity":"develop","event":"applied","src":"REF-workflow#development"}
 {"v":1,"ts":"2026-09-21T16:24:36Z","run":"develop-docs-sync-push-20260922-d72818","activity":"develop","event":"applied","src":"REF-project-overview#boundaries"}
 {"v":1,"ts":"2026-09-21T16:24:36Z","run":"develop-docs-sync-push-20260922-d72818","activity":"develop","event":"outcome","status":"DONE"}
+{"v":1,"ts":"2026-09-24T13:44:00Z","run":"develop-CODEX-YOLO-ROUTING-2026-09-24-f07b58","activity":"develop","pfp":"44136fa355b3","event":"compiled","sources":["REF-project-overview#boundaries","REF-troubleshooting#secrets","REF-project-overview#purpose","REF-troubleshooting#diagnosis","REF-workflow#development"],"hashes":{"REF-project-overview#boundaries":"cb1bcca75425","REF-troubleshooting#secrets":"7f95f86686f2","REF-project-overview#purpose":"e3caed6d2c32","REF-troubleshooting#diagnosis":"665768cc5908","REF-workflow#development":"9f8ae0ceb4bf"},"used":10,"max":0,"dropped":[]}
+{"v":1,"ts":"2026-09-24T13:49:24Z","run":"develop-CODEX-YOLO-ROUTING-2026-09-24-f07b58","activity":"develop","event":"applied","src":"REF-project-overview#boundaries"}
+{"v":1,"ts":"2026-09-24T13:49:24Z","run":"develop-CODEX-YOLO-ROUTING-2026-09-24-f07b58","activity":"develop","event":"applied","src":"REF-project-overview#purpose"}
+{"v":1,"ts":"2026-09-24T13:49:24Z","run":"develop-CODEX-YOLO-ROUTING-2026-09-24-f07b58","activity":"develop","event":"applied","src":"REF-troubleshooting#diagnosis"}
+{"v":1,"ts":"2026-09-24T13:49:24Z","run":"develop-CODEX-YOLO-ROUTING-2026-09-24-f07b58","activity":"develop","event":"applied","src":"REF-workflow#development"}
+{"v":1,"ts":"2026-09-24T13:49:24Z","run":"develop-CODEX-YOLO-ROUTING-2026-09-24-f07b58","activity":"develop","event":"outcome","status":"DONE"}
