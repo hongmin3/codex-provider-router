@@ -1,5 +1,6 @@
 # Progress
 
+- 2026-09-25: SPEC과 실제 비용 한도 구현·테스트·변경 이력을 대조했다. 2절에서 token 단가 기반 비용 차단을 범위 밖으로 적은 오래된 문장을 현재 REQ-COST-001에 맞게 고쳤다.
 - 2026-09-13: Codex 0.154.0, ChatGPT login, DeepSeek Responses API 기준 Router 구축·설치.
 - 기본 fallback은 `deepseek-flash + high`; `flash`, `pro`, `vision` alias와 reasoning 영구 설정 지원.
 - OpenAI/DeepSeek 실 API, state simulation, checkpoint, Keychain, shell/apply_patch/Git/MCP 보존 테스트 완료.

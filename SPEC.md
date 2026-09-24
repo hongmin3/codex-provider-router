@@ -85,6 +85,7 @@ Router가 하는 일은 다음과 같다.
 - DeepSeek로 넘겨 쓸 때의 profile(모델·reasoning·모델 목록) 설정을 계속 유지하는 것과 그 설정을 바꾸는 명령.
 - 넘겨 쓰는 시점에 작업 맥락을 담은 checkpoint 만들기, 그리고 Codex가 저장해 둔 대화(persisted thread) 이어 열기(resume).
 - DeepSeek 잔액 조회와 잔액 경고, provider 상태 cache.
+- DeepSeek token 사용량으로 비용을 계산하고, 소유자가 정한 하루·한 달 한도를 넘으면 실행을 막는 기능.
 - 작업 성격에 맞는 모델을 추천하고, 사용자가 승인하면 실행하는 `ai` Model Router.
 - macOS(zsh)와 Windows(PowerShell·cmd)용 설치·제거 스크립트, 그리고 자격증명 저장소(Key 보관함) 연결.
 
@@ -95,7 +96,6 @@ Router가 하는 일은 다음과 같다.
 - Codex 세션이 열려 있는 도중에 provider를 바꿔 끼우는 것(hot-swap). Codex CLI에 그런 기능이 없으므로 있다고 가정하지 않는다.
 - DeepSeek 다음에 세 번째 provider로 또 넘기는 것.
 - MCP·plugin·project trust 설정 관리.
-- 토큰 단가로 비용을 계산해 강제로 멈추는 기능(hard-stop). 13절을 본다.
 
 ## 3. 시스템 구성
 

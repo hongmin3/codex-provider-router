@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="automation-workspace render-spec-html v5">
 <meta name="spec-html-renderer" content="v5">
-<meta name="spec-source-sha256" content="c60dd82f1267b0ac33551c8e30f477e83142ebacc4f3009d5d4460dc6ee1224a">
+<meta name="spec-source-sha256" content="5a1519f6c850a7fee55b1f9849b87220f35da13e5f6650b8aebb8300d37e5cff">
 <title>Codex Provider Router 사양서</title>
 <style>:root{--bg:#f7f8fa;--panel:#fff;--text:#1d2330;--muted:#5d6678;--line:#e2e6ee;--accent:#2f6fde;--code:#f1f3f7;
 --req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;
@@ -260,6 +260,7 @@ footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);f
 <li>DeepSeek로 넘겨 쓸 때의 <span class="term" title="Codex가 어느 provider와 모델로 실행할지 적어 둔 설정 묶음" tabindex="0">profile</span>(모델·<span class="term" title="모델이 답하기 전에 얼마나 깊이 생각할지 정하는 값. DeepSeek는 low, high, max를 쓴다" tabindex="0">reasoning</span>·<span class="term" title="DeepSeek가 공식으로 내놓는 모델 목록. Router가 내려받아 둔다" tabindex="0">모델 목록</span>) 설정을 계속 유지하는 것과 그 설정을 바꾸는 명령.</li>
 <li>넘겨 쓰는 시점에 작업 맥락을 담은 <span class="term" title="넘겨 쓰기 직전에 작업 디렉터리의 상태(git status, git diff, 안내 문서)를 담아 둔 기록" tabindex="0">checkpoint</span> 만들기, 그리고 Codex가 저장해 둔 대화(persisted <span class="term" title="Codex가 저장해 두는 대화 하나. 요청, 명령 결과, TODO가 들어 있다" tabindex="0">thread</span>) <span class="term" title="저장된 thread를 다시 열어 대화를 이어 가는 Codex 명령" tabindex="0">이어 열기</span>(resume).</li>
 <li>DeepSeek 잔액 조회와 잔액 경고, <span class="term" title="Codex가 요청을 보내는 AI 서비스 회사. 이 문서에서는 OpenAI와 DeepSeek 두 곳이다" tabindex="0">provider</span> 상태 <span class="term" title="한 번 조회한 provider 상태와 잔액을 저장해 두고 다시 쓰는 것" tabindex="0">cache</span>.</li>
+<li>DeepSeek <span class="term" title="모델이 읽고 쓴 글의 양을 세는 값. DeepSeek 비용은 이것으로 계산한다" tabindex="0">token 사용량</span>으로 비용을 계산하고, 소유자가 정한 하루·한 달 한도를 넘으면 실행을 막는 기능.</li>
 <li>작업 성격에 맞는 모델을 추천하고, 사용자가 승인하면 실행하는 <code class="term" title="작업 성격을 보고 알맞은 모델과 reasoning을 추천하는 명령(Model Router)" tabindex="0">ai</code> Model Router.</li>
 <li>macOS(zsh)와 Windows(PowerShell·cmd)용 설치·제거 스크립트, 그리고 자격증명 저장소(Key 보관함) 연결.</li>
 </ul>
@@ -270,7 +271,6 @@ footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);f
 <li>Codex 세션이 열려 있는 도중에 <span class="term" title="Codex가 요청을 보내는 AI 서비스 회사. 이 문서에서는 OpenAI와 DeepSeek 두 곳이다" tabindex="0">provider</span>를 바꿔 끼우는 것(hot-swap). Codex CLI에 그런 기능이 없으므로 있다고 가정하지 않는다.</li>
 <li>DeepSeek 다음에 세 번째 <span class="term" title="Codex가 요청을 보내는 AI 서비스 회사. 이 문서에서는 OpenAI와 DeepSeek 두 곳이다" tabindex="0">provider</span>로 또 넘기는 것.</li>
 <li>MCP·plugin·project trust 설정 관리.</li>
-<li>토큰 단가로 비용을 계산해 강제로 멈추는 기능(hard-stop). 13절을 본다.</li>
 </ul>
 </section>
 <section class="chapter" id="sec-3">
@@ -693,13 +693,14 @@ footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);f
 <section class="card kind-req" id="REQ-COST-001">
 <h3><span class="idtag">REQ-COST-001</span> 비용 한도를 넘으면 실행 막기</h3>
 <div class="card-meta"><span class="badge st-implemented">implemented</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-COST-002">TEST-COST-002</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-COST-002">TEST-COST-002</a></span></div>
-<details class="history"><summary>변경 이력 5</summary>
+<details class="history"><summary>변경 이력 6</summary>
 <ul>
 <li><span class="hist">[Unreleased] · Added</span> <a class="idref" href="#REQ-COST-001">REQ-COST-001</a>: 비용·시간 한도 실제 강제. DeepSeek 세션 전에 <code>daily_limit_usd</code>,
 <code>monthly_limit_usd</code>, <code>max_fallback_minutes</code>를 확인하고 한도를 넘으면 실행하지 않고 종료
 코드 75로 끝낸다.</li>
 <li><span class="hist">[Unreleased] · Added</span> <a class="idref" href="#REQ-COST-001">REQ-COST-001</a>: <span class="term" title="DeepSeek 세션마다 쓴 token 수와 돈으로 바꾼 비용을 쌓아 두는 파일" tabindex="0">비용 원장</span> <code>~/.codex/router/spend.jsonl</code>과 <code>codex-router cost [--json]</code> 명령.
 Codex rollout에서 세션 전후 token 차이만 읽어 <code>models.toml</code> 단가로 환산한다(<code class="term" title="저장된 thread를 다시 열어 대화를 이어 가는 Codex 명령" tabindex="0">resume</code> 대응).</li>
+<li><span class="hist">[Unreleased] · Changed</span> <a class="idref" href="#REQ-COST-001">REQ-COST-001</a>: 2절 범위에서 비용 한도 기능을 제외한다고 적힌 오래된 문장을 고쳤다. 이 기능은 2026-09-20부터 구현·테스트된 현재 범위다.</li>
 <li><span class="hist">[Unreleased] · Changed</span> <a class="idref" href="#REQ-COST-001">REQ-COST-001</a>: 비용 한도 기본값을 0(무제한)으로 변경. DeepSeek 잔액 자체가 실제 지출
 상한이라는 소유자 결정에 따라 <code>daily_limit_usd</code>·<code>monthly_limit_usd</code>는 소유자가 양수로
 명시한 경우에만 실행을 막는다. <code>config/config.toml</code>·코드 기본값·설치본 설정 모두 0으로
