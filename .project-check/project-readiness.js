@@ -209,6 +209,14 @@ function checkProject(projectRoot, options = {}) {
     else if (html.status === 'STALE') error('SPEC_HTML_STALE', `${html.output}: generated from an older SPEC.md; ${regenerate}`);
     else if (html.status === 'UNMANAGED') error('SPEC_HTML_UNMANAGED', `${html.output}: not generated from SPEC.md (or a symlink); move it aside, then ${regenerate}`);
     else if (html.version !== specHtml.RENDERER_VERSION) warning('SPEC_HTML_RENDERER_OUTDATED', `${html.output}: rendered by ${html.version}; ${regenerate} for the ${specHtml.RENDERER_VERSION} layout`);
+    // 쉬운 말 기준(AGENTS.md "SPEC 문장 쓰기"). 판정이 아니라 다시 읽을 곳을 알린다. 목록은 렌더러 한 벌이다.
+    const plain = specHtml.plainLanguage(rawSpec);
+    result.counts.paragraphs = plain.paragraphs;
+    if (plain.words.length || plain.long.length) {
+      const words = plain.words.map(w => `${w.word} ${w.count}(SPEC.md:${w.line})`).join(', ');
+      const long = plain.long.length ? `${plain.long.length} paragraph(s) over ${plain.limit} chars (first SPEC.md:${plain.long[0].line}, ${plain.long[0].chars} chars)` : '';
+      warning('SPEC_PLAIN_LANGUAGE', `SPEC.md: hard-to-read wording for a first-time reader — ${[words && 'words: ' + words, long].filter(Boolean).join('; ')}; ${plain.paragraphs} paragraphs inspected; rewrite per AGENTS.md "SPEC 문장 쓰기"`);
+    }
     if (result.counts.testPaths === 0) warning('NO_TEST_FILE_REFERENCES', 'SPEC.md: no automated test file references inspected; documented TEST procedures need actual execution evidence');
   }
   return result;

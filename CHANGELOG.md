@@ -33,6 +33,7 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Changed
 
+- SPEC 문장을 처음 보는 사람도 읽을 수 있게 다시 썼다. 긴 문단은 나누고, 차례는 번호 목록, 예외는 `> **예외**` 상자, 이유는 `이유:` 줄로 옮겼다. 1절에 용어 표(`이 문서에서 쓰는 말`)를 더했다. 사양 내용(규칙·숫자·날짜·코드 이름·요구사항 ID·추적성 표)은 바꾸지 않았다(공통 SPEC workflow v5·렌더러 v5).
 - 문서: 공통 SPEC workflow v4(AGENTS.md) — SPEC·CHANGELOG 작성 규칙(제목 이름, 기능 그룹 표, CHANGELOG ID, 예시 블록 금지, flow 흐름도, 로컬 이미지, HTML 재생성)을 한 절로 모았다. `docs/SPEC.html` 렌더러 v4: 왼쪽 목차에 지금 읽는 절·요구사항 표시.
 - 준비 검사: CHANGELOG 형식 예시 블록에 실제 항목이 들어가면 `CHANGELOG_EXAMPLE_MODIFIED`로 경고한다(키트 관리 사본 `.project-check/project-readiness.js`, 기준 `.project-check/changelog-template.md`).
 - 문서: `docs/SPEC.html`을 렌더러 v3로 다시 만들었다 — 이력이 없는 요구사항에 "기록된 변경 없음" 표시.

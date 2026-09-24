@@ -16,7 +16,9 @@ const crypto = require('crypto');
 // v2: 기능 목록·카드 메타(상태·구현·테스트·역참조)·요구사항별 변경 이력·로컬 이미지.
 // v3: ```flow 흐름도(inline SVG), 이력이 없는 요구사항의 "기록 없음" 표시.
 // v4: 지금 읽는 절·요구사항을 왼쪽 목차에 표시(scroll spy, aria-current).
-const RENDERER_VERSION = 'v4';
+// v5: 카드 소제목(####)을 이름표-내용 칸으로, 번호 목록을 단계로, `> **예외**` 인용을 색 상자로,
+//     `이유:` 줄을 따로 보이고, `| 용어 | 뜻 |` 표의 용어에 마우스를 올리면 뜻을 보인다.
+const RENDERER_VERSION = 'v5';
 const OUTPUT = 'docs/SPEC.html';
 const REGENERATE = 'node .project-check/render-spec-html.js .';
 const ID = /\b(?:REQ|NFR|TEST)-[A-Z0-9]+-\d{3}\b/g;
@@ -53,7 +55,9 @@ function inline(text, ctx, opts = {}) {
   const codes = [];
   const masked = text.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (_, ticks, body) => {
     const inner = /^ .* $/.test(body) ? body.slice(1, -1) : body;
-    return `\uE002${codes.push('<code>' + esc(inner) + '</code>') - 1}\uE003`;
+    const meaning = !opts.noIds && !ctx.inGlossary && ctx.terms && (ctx.terms.code.get(inner) || ctx.terms.plain.get(inner));
+    const open = meaning ? `<code class="term" title="${esc(meaning)}" tabindex="0">` : '<code>';
+    return `\uE002${codes.push(open + esc(inner) + '</code>') - 1}\uE003`;
   });
   return prose(masked, ctx, opts).replace(/\uE002(\d+)\uE003/g, (_, i) => codes[i]);
 }
@@ -78,6 +82,10 @@ function prose(raw, ctx, opts) {
 }
 
 function format(html, ctx, opts) {
+  // 용어 표의 말은 자리표시자로 먼저 감싼다. 뜻(title)에 ID나 `**`가 있어도 아래 치환이 건드리지 않는다.
+  const terms = [];
+  if (!opts.noIds && !ctx.inGlossary && ctx.terms && ctx.terms.re) html = html.replace(ctx.terms.re, (m, pre, word) =>
+    `${pre}\uE020${terms.push(`<span class="term" title="${esc(ctx.terms.text.get(word))}" tabindex="0">${word}</span>`) - 1}\uE021`);
   let s = html
     .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<em>$2</em>');
@@ -87,7 +95,7 @@ function format(html, ctx, opts) {
     if (ctx.card && ctx.card !== id && !opts.noRefs) (ctx.refs[id] = ctx.refs[id] || new Set()).add(ctx.card);
     return `<a class="idref" href="#${id}">${id}</a>`;
   });
-  return s;
+  return s.replace(/\uE020(\d+)\uE021/g, (_, i) => terms[i]);
 }
 
 // ---- blocks -------------------------------------------------------------------------------
@@ -99,6 +107,9 @@ const LIST = /^( *)([-*+]|\d{1,9}[.)])(?: +|$)/;
 const QUOTE = /^ {0,3}> ?/;
 const TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
 const indentOf = line => line.match(/^ */)[0].length;
+const CALLOUT_KIND = { 예외: 'warn', 주의: 'warn', 이유: 'info', 참고: 'info', 예시: 'example' };
+const CALLOUT = /^\s*\*\*(예외|주의|이유|참고|예시)\*\*[\s:.]*/;
+const WHY = /^\s*이유\s*:\s*/;
 
 function isTableStart(lines, i) {
   return lines[i].trim().startsWith('|') && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1]) && lines[i + 1].includes('-');
@@ -137,6 +148,8 @@ function renderTable(rows, ctx) {
   const reqCol = header.findIndex(c => /^(?:Requirement|요구사항)$/i.test(c));
   const statusCol = header.findIndex(c => /^(?:Status|상태)$/i.test(c));
   const trace = reqCol >= 0 && statusCol >= 0;
+  // 용어 표 자신에는 뜻 풍선을 달지 않는다(자기 자신을 설명하게 된다).
+  ctx.inGlossary = glossaryColumns(header) !== null;
   const cell = (tag, text, i) => {
     const a = align[i] ? ` style="text-align:${align[i]}"` : '';
     const word = text.toLowerCase();
@@ -154,6 +167,7 @@ function renderTable(rows, ctx) {
     out.push('<tr>' + values.slice(0, header.length).map((c, i) => cell('td', c, i)).join('') + '</tr>');
   }
   out.push('</tbody>', '</table></div>');
+  ctx.inGlossary = false;
   return out.join('\n');
 }
 
@@ -188,7 +202,8 @@ function parseList(lines, start, ctx) {
     }
     if (ind > base) { cur.push(line.replace(new RegExp('^ {0,' + contentIndent + '}'), '')); i++; continue; }
     // 게으른 이어쓰기: 들여쓰지 않은 다음 줄이 새 블록이 아니면 같은 항목의 문장이다.
-    if (ind <= base && !m && !isBlockStart(lines, i) && lines[i - 1].trim()) { cur.push(line.trim()); i++; continue; }
+    // `이유:` 줄은 목록에 이어 붙지 않고 목록 뒤의 새 문단이 된다.
+    if (ind <= base && !m && !isBlockStart(lines, i) && !WHY.test(line) && lines[i - 1].trim()) { cur.push(line.trim()); i++; continue; }
     break;
   }
   const startNo = ordered ? parseInt(first[2], 10) : 1;
@@ -211,7 +226,7 @@ function renderBlocks(lines, ctx, opts = {}) {
   const out = [];
   let i = 0;
   const closeTo = level => {
-    while (ctx.stack.length && ctx.stack[ctx.stack.length - 1].level >= level) { ctx.stack.pop(); out.push('</section>'); }
+    while (ctx.stack.length && ctx.stack[ctx.stack.length - 1].level >= level) out.push(ctx.stack.pop().close || '</section>');
     ctx.card = [...ctx.stack].reverse().find(e => e.card)?.card || null;
   };
   while (i < lines.length) {
@@ -249,6 +264,10 @@ function renderBlocks(lines, ctx, opts = {}) {
         out.push(`<section class="card kind-${kind}" id="${id}">`);
         out.push(`<h${level}><span class="idtag">${id}</span>${name ? ' ' + name : ''}</h${level}>`);
         out.push(`\uE010${id}\uE011`);
+      } else if (opts.top && ctx.card && level >= 4 && level > ctx.stack.find(e => e.card === ctx.card).level) {
+        // 카드 안 소제목(목적·입력·동작…)은 왼쪽 이름표, 오른쪽 내용 칸으로 보인다. 다음 소제목이나 카드 끝에서 닫힌다.
+        ctx.stack.push({ level, card: ctx.card, close: '</div></section>' });
+        out.push(`<section class="field"><h${level}>${inline(text, ctx, { noIds: true })}</h${level}><div class="field-body">`);
       } else if (level === 2 && opts.top) {
         const sid = chapter ? 'sec-' + chapter[1] : 'part-' + (++ctx.parts);
         ctx.toc.push(`<li class="toc-2"><a href="#${sid}">${inline(text, ctx, { noIds: true })}</a></li>`);
@@ -276,7 +295,12 @@ function renderBlocks(lines, ctx, opts = {}) {
     if (QUOTE.test(line)) {
       const body = [];
       while (i < lines.length && lines[i].trim() && QUOTE.test(lines[i])) body.push(lines[i++].replace(QUOTE, ''));
-      out.push('<blockquote>', ...renderBlocks(body, ctx), '</blockquote>');
+      // `> **예외** …`처럼 첫 단어가 굵은 이름표면 그 종류의 색 상자로 보인다.
+      const label = body[0].match(CALLOUT);
+      if (label) {
+        body[0] = body[0].slice(label[0].length);
+        out.push(`<aside class="callout callout-${CALLOUT_KIND[label[1]]}"><span class="callout-label">${label[1]}</span>`, ...renderBlocks(body, ctx), '</aside>');
+      } else out.push('<blockquote>', ...renderBlocks(body, ctx), '</blockquote>');
       continue;
     }
     if (LIST.test(line)) {
@@ -286,14 +310,17 @@ function renderBlocks(lines, ctx, opts = {}) {
       continue;
     }
     const para = [];
-    while (i < lines.length && lines[i].trim() && (para.length === 0 || !isBlockStart(lines, i))) para.push(lines[i++]);
+    // `이유:`로 시작하는 줄은 앞 문장에 붙어 있어도 새 문단이다.
+    while (i < lines.length && lines[i].trim() && (para.length === 0 || (!isBlockStart(lines, i) && !WHY.test(lines[i])))) para.push(lines[i++]);
+    const why = !opts.tight && para[0].match(WHY);
+    if (why) para[0] = para[0].slice(why[0].length);
     // 문단 전체를 한 번에 inline 처리한다(줄을 넘는 강조). 줄 끝 두 칸·역슬래시는 강제 줄바꿈이다.
     const joined = para.map((l, k) => {
       const hard = k < para.length - 1 && /(?: {2,}|\\)$/.test(l);
       return l.trim().replace(/\\$/, hard ? '' : '\\') + (hard ? '\uE004' : '');
     }).join('\n');
     const html = inline(joined, ctx).replace(/\uE004/g, '<br>');
-    out.push(opts.tight ? html : `<p>${html}</p>`);
+    out.push(why ? `<p class="why"><span class="why-label">이유</span> ${html}</p>` : opts.tight ? html : `<p>${html}</p>`);
   }
   if (opts.top) closeTo(0);
   return out;
@@ -450,6 +477,89 @@ function scanTables(lines) {
   return { trace, groups };
 }
 
+// `| 용어 | 뜻 |` 표의 열 위치. 뜻 열은 `뜻`·`설명`·`의미` 중 하나다.
+function glossaryColumns(head) {
+  const term = head.findIndex(c => /^(?:용어|Term)$/i.test(c)), meaning = head.findIndex(c => /^(?:뜻|설명|의미|Meaning)$/i.test(c));
+  return term >= 0 && meaning >= 0 ? { term, meaning } : null;
+}
+
+// 용어 표를 모은다. 칸 속 `코드 이름`은 본문의 같은 코드에, 나머지 글자 조각(두 글자 이상)은 본문의 같은 말에
+// 뜻을 단다. 뜻은 마크다운 표시를 뺀 글자다. 먼저 나온 정의가 이긴다.
+function glossary(lines) {
+  const code = new Map(), text = new Map();
+  const v = visibleLines(lines);
+  for (let i = 0; i < v.length; i++) {
+    if (!isTableStart(v, i)) continue;
+    const cols = glossaryColumns(cells(v[i]));
+    let j = i + 2;
+    for (; j < v.length && v[j].trim().startsWith('|'); j++) {
+      if (!cols) continue;
+      const row = cells(v[j]);
+      const meaning = (row[cols.meaning] || '').replace(/`+/g, '').replace(/\*\*|\*/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
+      const cell = row[cols.term] || '';
+      if (!meaning || /\bTBD\b/.test(cell + meaning)) continue;
+      for (const m of cell.matchAll(/`([^`]+)`/g)) if (!code.has(m[1].trim())) code.set(m[1].trim(), meaning);
+      // "거래 줄(leg)", "잠정값 · 확정값"처럼 괄호·구분자로 적은 다른 이름도 각각 같은 뜻의 용어다.
+      for (const part of cell.replace(/`[^`]*`/g, '\u0000').split(/[()（）,·/\u0000]/)) {
+        const plain = part.replace(/\s+/g, ' ').trim();
+        if ([...plain].length >= 2 && !text.has(plain)) text.set(plain, meaning);
+      }
+    }
+    i = j - 1;
+  }
+  // 긴 말부터 맞춘다("기준영업일"이 "영업일"보다 먼저). 영문·숫자 용어는 더 긴 단어 속에서는 맞추지 않는다.
+  const words = [...text.keys()].sort((a, b) => b.length - a.length || (a < b ? -1 : 1));
+  const escRe = w => esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = words.length ? new RegExp(`(^|[^A-Za-z0-9_])(${words.map(escRe).join('|')})(?![A-Za-z0-9_])`, 'g') : null;
+  // 정규식은 escape된 글자에 맞추므로 역참조도 escape된 글자로 찾는다.
+  const byEscaped = new Map(words.map(w => [esc(w), text.get(w)]));
+  // plain: 용어 표에 글자로 적은 말을 본문에서 `코드`로 쓴 경우(시트 이름 등)에도 뜻을 단다.
+  return { code, plain: text, text: byEscaped, re };
+}
+
+// ---- plain language -----------------------------------------------------------------------
+
+// 처음 보는 사람이 읽기 어려운 말. AGENTS.md "SPEC 문장 쓰기"의 표와 같은 목록이다(준비 검사가 경고로 쓴다).
+// inline code·fenced 블록·주석 속 글자는 코드 이름이므로 보지 않는다. "트리거"는 Apps Script 화면의 실제
+// 메뉴 이름이기도 해서 기계적으로 가를 수 없으므로 목록에 넣지 않는다(작성 기준 표에만 있다).
+const PLAIN_WORDS = [
+  ['단조 증가', /단조\s*(?:증가|감소|롭게\s*증가)/g], ['append-only', /append[- ]only/gi], ['멱등', /멱등|idempoten\w*/gi],
+  ['fallback', /fallback|폴백/gi], ['정합성', /정합성|무결성/g], ['원복', /원복|롤백|rollback/gi], ['관측', /관측/g],
+  ['스키마', /스키마|schema/gi], ['dedupe', /dedupe|디듀프/gi], ['영속', /영속|불변/g],
+];
+const LONG_PARAGRAPH = 300;
+
+// 쉬운 말 기준 검사. 판정이 아니라 다시 읽어 볼 곳을 알려 준다. 검사한 문단 수를 함께 돌려주어
+// "0건"이 아무것도 보지 못한 결과와 구별되게 한다.
+function plainLanguage(markdown) {
+  const src = normalize(markdown).replace(/<!--[\s\S]*?(?:-->|$)/g, c => c.replace(/[^\n]/g, ' '));
+  const lines = visibleLines(src.split('\n'));
+  const words = new Map(), long = [];
+  let paragraphs = 0, block = null;
+  const close = () => {
+    if (!block) return;
+    paragraphs++;
+    if (block.chars > LONG_PARAGRAPH) long.push({ line: block.line, chars: block.chars });
+    block = null;
+  };
+  lines.forEach((line, k) => {
+    const text = line.replace(/`[^`\n]*`/g, ' ').replace(/\]\([^)]*\)/g, ']');
+    for (const [name, re] of PLAIN_WORDS) for (const _ of text.matchAll(re)) {
+      const w = words.get(name) || words.set(name, { count: 0, line: k + 1 }).get(name);
+      w.count++;
+    }
+    const t = line.trim();
+    const item = LIST.test(line) && !/^ {2,}/.test(line.match(LIST)[1]);
+    if (!t || HEADING.test(line) || t.startsWith('|') || item || QUOTE.test(line)) close();
+    if (!t || HEADING.test(line) || t.startsWith('|')) return;
+    const body = t.replace(LIST, '').replace(QUOTE, '');
+    if (!block) block = { line: k + 1, chars: 0 };
+    block.chars += [...body].length;
+  });
+  close();
+  return { words: [...words].map(([word, v]) => ({ word, count: v.count, line: v.line })), long, paragraphs, limit: LONG_PARAGRAPH };
+}
+
 // CHANGELOG.md에서 ID를 언급한 목록 항목을 모은다. 예시 블록(fenced)은 이력이 아니다.
 // 각 항목에는 가장 가까운 `##`(버전·날짜)과 `###`(Added/Changed/Fixed) 제목을 붙인다.
 function changelogHistory(markdown) {
@@ -529,7 +639,8 @@ function render(markdown, options = {}) {
   const lines = text.replace(/\t/g, '    ').split('\n');
   const { trace, groups } = scanTables(lines);
   const ctx = { ids: definedIds(lines), stack: [], toc: [], opened: new Set(), statusCounts: {}, meta: null, title: null, titleSeen: false, parts: 0,
-    card: null, refs: {}, trace, groups, history: changelogHistory(options.changelog || ''), hasChangelog: Boolean(options.changelog), flows: 0 };
+    card: null, refs: {}, trace, groups, history: changelogHistory(options.changelog || ''), hasChangelog: Boolean(options.changelog), flows: 0,
+    terms: glossary(lines), inGlossary: false };
   ctx.chaptersSeen = () => ctx.toc.some(t => t.startsWith('<li class="toc-2"'));
   const rendered = renderBlocks(lines, ctx, { top: true }).join('\n');
   // 카드 머리는 본문 전체를 읽은 뒤에야 역참조를 알 수 있으므로 자리표시자를 마지막에 채운다.
@@ -656,9 +767,11 @@ function main(args) {
 
 const CSS = `
 :root{--bg:#f7f8fa;--panel:#fff;--text:#1d2330;--muted:#5d6678;--line:#e2e6ee;--accent:#2f6fde;--code:#f1f3f7;
---req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;color-scheme:light}
+--req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;
+--warn-bg:#fdf6e7;--info-bg:#eef4fe;--ex-bg:#ecf8f1;color-scheme:light}
 @media (prefers-color-scheme:dark){:root{--bg:#12151c;--panel:#1a1f29;--text:#e4e8f0;--muted:#9aa4b7;--line:#2c3444;--accent:#6ea0ff;--code:#232a37;
---req:#6ea0ff;--nfr:#b58cff;--test:#3cc4a6;--draft:#8f99ad;--implemented:#e3a93a;--verified:#45c47c;--deprecated:#ef6b62;--active:#6ea0ff;color-scheme:dark}}
+--req:#6ea0ff;--nfr:#b58cff;--test:#3cc4a6;--draft:#8f99ad;--implemented:#e3a93a;--verified:#45c47c;--deprecated:#ef6b62;--active:#6ea0ff;
+--warn-bg:#2a2518;--info-bg:#1a2436;--ex-bg:#172a21;color-scheme:dark}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;word-break:keep-all;overflow-wrap:break-word}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
@@ -684,6 +797,21 @@ main{min-width:0}
 .card{border:1px solid var(--line);border-left:4px solid var(--req);border-radius:8px;padding:2px 16px 8px;margin:14px 0;background:var(--bg)}
 .card.kind-nfr{border-left-color:var(--nfr)}.card.kind-test{border-left-color:var(--test)}
 .card h3,.card h4{margin:12px 0 4px}.card h4{font-size:14px;color:var(--muted)}
+.card{padding:4px 20px 12px}.card p,.card li{max-width:46em}.card p{margin:.4em 0 .9em;line-height:1.85}
+.field{display:grid;grid-template-columns:7.5em minmax(0,1fr);gap:0 18px;border-top:1px solid var(--line);padding:10px 0 2px}
+.field>h4,.field>h5,.field>h6{margin:.15em 0 0;font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.field-body>:first-child{margin-top:0}.field-body>:last-child{margin-bottom:.4em}
+.field-body ol{list-style:none;counter-reset:step;padding-left:0}
+.field-body ol>li{counter-increment:step;position:relative;padding-left:2.1em;margin:.45em 0}
+.field-body ol>li::before{content:counter(step);position:absolute;left:0;top:.2em;width:1.5em;height:1.5em;border-radius:50%;background:var(--code);color:var(--accent);font-size:12px;font-weight:700;line-height:1.5em;text-align:center}
+.field-body ul{padding-left:1.2em}.field-body li{margin:.3em 0}
+.callout{display:block;margin:12px 0;padding:10px 14px 10px 14px;border-radius:8px;border:1px solid var(--line);border-left:4px solid var(--muted);background:var(--panel)}
+.callout>p{margin:.3em 0}.callout-label{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:0 8px;margin-bottom:2px;color:#fff;background:var(--muted)}
+.callout-warn{border-left-color:var(--implemented);background:var(--warn-bg)}.callout-warn .callout-label{background:var(--implemented)}
+.callout-info{border-left-color:var(--accent);background:var(--info-bg)}.callout-info .callout-label{background:var(--accent)}
+.callout-example{border-left-color:var(--verified);background:var(--ex-bg)}.callout-example .callout-label{background:var(--verified)}
+p.why{color:var(--muted);border-left:3px solid var(--line);padding-left:10px}.why-label{font-size:12px;font-weight:700;color:var(--accent);margin-right:4px}
+.term{text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:help}code.term{text-decoration-color:var(--accent)}
 .idtag{font:600 13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--req);color:#fff;border-radius:6px;padding:2px 8px}
 .kind-nfr .idtag{background:var(--nfr)}.kind-test .idtag{background:var(--test)}
 .idref{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;white-space:nowrap}
@@ -713,7 +841,7 @@ li.task{list-style:none;margin-left:-1.2em}
 hr{border:0;border-top:1px solid var(--line);margin:20px 0}
 footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);font-size:13px}
 .hidden{display:none}
-@media (max-width:860px){.layout{grid-template-columns:1fr;padding:16px}.toc{position:static;max-height:260px}.top{padding:18px 16px}.chapter{padding:2px 14px 12px}footer{padding:8px 16px 32px}}
+@media (max-width:860px){.field{grid-template-columns:1fr}.layout{grid-template-columns:1fr;padding:16px}.toc{position:static;max-height:260px}.top{padding:18px 16px}.chapter{padding:2px 14px 12px}footer{padding:8px 16px 32px}}
 @media print{.toc,footer{display:none}.layout{display:block;padding:0}.chapter{break-inside:auto;border:0}.card{break-inside:avoid}body{background:#fff}}
 `.trim();
 
@@ -749,7 +877,7 @@ if(r.top<t.top+40||r.bottom>t.bottom-8)toc.scrollTop+=r.top-t.top-toc.clientHeig
 window.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);window.addEventListener('hashchange',update);update();})();
 `.trim();
 
-module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write, activeIndex };
+module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write, activeIndex, plainLanguage };
 
 if (require.main === module) {
   try { process.exitCode = main(process.argv.slice(2)); }
