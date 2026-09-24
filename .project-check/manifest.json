@@ -6,7 +6,5 @@
     "render-spec-html.js": "66e54ac3102b37cc87ce3405078ad6f928cd24820f901b0ca39083095958b948",
     "changelog-template.md": "755091aa8eb9e08243808da015a724ddbb34c67fe713e0faabda6fb590a89402"
   },
-  "projectFiles": {
-    ".github/workflows/project-readiness.yml": "239453c90ee891c4ffb51345ac3a570d07b3b88fb18afee0f10c9693b5df5c8e"
-  }
+  "projectFiles": {}
 }
