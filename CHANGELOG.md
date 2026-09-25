@@ -57,6 +57,7 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 - SPEC.md: Project Version 1.0.0, Owner 역할명 지정. `daily_limit_usd`류가 "참고값"이라는
   미확정 항목을 닫고 REQ-COST-001로 확정.
 - 2026-09-25: 공통 키트 이름이 Botyard로 바뀌어 `.project-check/`의 SPEC HTML 렌더러와 `docs/SPEC.html`의 생성기 표시를 갱신했다(형식·내용 변경 없음). 준비 검사와 자체 테스트 통과.
+- 2026-09-26: 공통 키트 자동 반영용 검증 명령 파일 `botyard.json` 추가(키트 관리 파일만 바뀌면 이 명령과 준비 검사를 통과한 뒤 자동으로 커밋·push된다).
 
 ### Fixed
 
