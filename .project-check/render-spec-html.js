@@ -664,7 +664,7 @@ function render(markdown, options = {}) {
     '<head>',
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<meta name="generator" content="automation-workspace render-spec-html ${RENDERER_VERSION}">`,
+    `<meta name="generator" content="botyard render-spec-html ${RENDERER_VERSION}">`,
     `<meta name="spec-html-renderer" content="${RENDERER_VERSION}">`,
     `<meta name="spec-source-sha256" content="${sourceHash(markdown, options.changelog || '')}">`,
     `<title>${esc(title)}</title>`,

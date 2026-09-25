@@ -31,3 +31,4 @@
 - 2026-09-23: 준비 검사에 CHANGELOG 형식 예시 블록 검사(`CHANGELOG_EXAMPLE_MODIFIED`) 반영. 준비 검사와 자체 테스트 통과.
 - 2026-09-24: 공통 SPEC workflow v4·SPEC HTML 렌더러 v4(목차에 지금 읽는 곳 표시) 반영. 준비 검사와 자체 테스트 통과.
 - 2026-09-25: SPEC을 쉬운 말 기준(공통 workflow v5)으로 다시 씀: 내용 변경 없음, 대조 검사(ID·절·코드 이름·숫자·추적성 표) 통과, 용어 표 추가, `docs/SPEC.html` 렌더러 v5로 재생성.
+- 2026-09-25: 공통 키트 이름이 Botyard로 바뀌어 `.project-check/`의 SPEC HTML 렌더러와 `docs/SPEC.html`의 생성기 표시를 갱신했다(형식·내용 변경 없음). 준비 검사와 자체 테스트 통과.
