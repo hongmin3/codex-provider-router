@@ -1,9 +1,9 @@
 {
   "version": 1,
   "files": {
-    "project-readiness.js": "beac591df22748aa1cf10829732ca022627cc3f1ba82b450d085747f0aa6a110",
-    "agents-spec-section.md": "36cae3d5a1aafa4db8e7646da09fa0d17d1e581b357929d3cc33f2cafe5890fa",
-    "render-spec-html.js": "1fff67c1954bbf29fb0e744afa5be3b602f2a2740f3c6c857d2f8a3a2d37704e",
+    "project-readiness.js": "e1aeeb7efaf94f4c4116327788ecb754cc2e7a8e091dd2b24ecd7548c57c1792",
+    "agents-spec-section.md": "c7c5c990e846fcbba495accb4d0d1ad109b0e71165ca39c4ce02782261243f7d",
+    "render-spec-html.js": "0d514b4aea57e6db59d4fd60bb95c0add2f7b8e8a48e8553d0bd3987453e84c4",
     "changelog-template.md": "755091aa8eb9e08243808da015a724ddbb34c67fe713e0faabda6fb590a89402"
   },
   "projectFiles": {}

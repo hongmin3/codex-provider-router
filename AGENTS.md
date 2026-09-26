@@ -61,7 +61,7 @@ node .project-check/project-readiness.js .
 <!-- project-spec-guidance: start -->
 ## 사양 기반 개발 (SPEC)
 
-<!-- spec-workflow: v5 -->
+<!-- spec-workflow: v6 -->
 
 `SPEC.md`가 이 프로젝트가 **어떻게 동작해야 하는가**의 기준이다. 코드의 현재 동작은 사양이
 아니다. 아래는 상위 기준이고, 실제 절차(계획·테스트·검증)는 기존 Skill을 그대로 쓴다.
@@ -98,10 +98,13 @@ push 규칙을 따른다.
 - REQ·NFR 제목 줄에 기능 이름을 쓴다: `### REQ-EXPORT-001 CSV 저장`. TEST 절차는 제외.
 - 5절 첫 REQ 앞에 `| 카테고리 | 이름 |` 기능 그룹 표를 둔다. NFR 카테고리도 넣는다.
 - 구현·테스트·상태는 12절 추적성 표에만 쓴다. 카드와 기능 목록이 거기서 읽는다.
+- 12절 Test 열에는 테스트 파일 경로, `<도구> --self-test`, 11절에 정의한 TEST-ID만 쓴다. README 같은 일반 파일은 안 된다.
+- 12절 Status는 `draft`·`implemented`·`verified`·`deprecated` 중 하나다. `verified`는 게이트(`botyard.json`의
+  `verify` 명령)가 실행하는 자동 테스트가 있을 때만 쓴다. 수동 절차만 있으면 `implemented`로 둔다.
 - CHANGELOG 항목 앞에 ID를 붙인다(`- REQ-EXPORT-001: …`). 머리의 형식 예시 블록 안에는 쓰지 않는다 —
   예시 블록은 이력으로 읽히지 않는다. 예전 항목에 ID를 추측으로 소급하지 않는다.
 - 흐름도는 `flow` 코드 블록으로 쓴다(`수집 -> 해석 -> 저장`, `저장 -(실패)-> 알림`). 외부 스크립트
-  (Mermaid 등)를 쓰지 않는다. 그림은 프로젝트 안 파일만 넣는다(`![설명](docs/images/x.png)`).
+  (Mermaid 등)를 쓰지 않는다. 그림은 프로젝트 안 파일만 Markdown 이미지 문법으로 넣는다(예: `docs/images/` 아래 파일).
 - `SPEC.md`나 `CHANGELOG.md`를 고쳤으면 `node .project-check/render-spec-html.js .`로 HTML을 다시
   만들어 같은 커밋에 넣는다. HTML은 두 문서의 사본이므로 직접 고치지 않는다. 준비 검사가 낡은 HTML을
   실패로, 이름 없는 제목과 예시 블록 속 항목을 경고로 잡는다.

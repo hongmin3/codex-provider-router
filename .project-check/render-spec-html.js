@@ -18,7 +18,8 @@ const crypto = require('crypto');
 // v4: 지금 읽는 절·요구사항을 왼쪽 목차에 표시(scroll spy, aria-current).
 // v5: 카드 소제목(####)을 이름표-내용 칸으로, 번호 목록을 단계로, `> **예외**` 인용을 색 상자로,
 //     `이유:` 줄을 따로 보이고, `| 용어 | 뜻 |` 표의 용어에 마우스를 올리면 뜻을 보인다.
-const RENDERER_VERSION = 'v5';
+// v6: fence·표 파서를 준비 검사와 한 벌로(탭 들여쓰기, 4칸 들여쓴 닫는 표시는 닫지 않음, code span 속 `|`).
+const RENDERER_VERSION = 'v6';
 const OUTPUT = 'docs/SPEC.html';
 const REGENERATE = 'node .project-check/render-spec-html.js .';
 const ID = /\b(?:REQ|NFR|TEST)-[A-Z0-9]+-\d{3}\b/g;
@@ -101,6 +102,21 @@ function format(html, ctx, opts) {
 // ---- blocks -------------------------------------------------------------------------------
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^`\s]*)[^`]*$/;
+// 닫는 표시: 3칸까지 들여쓰고, 여는 표시와 같은 글자로 같거나 더 길게, 뒤에는 공백만(CommonMark).
+// 렌더러의 본문·사전 스캔과 준비 검사(project-readiness.js)가 모두 이 두 규칙만 쓴다.
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
+function closesFence(line, fence) { const m = line.match(FENCE_CLOSE); return Boolean(m && m[1][0] === fence[0] && m[1].length >= fence.length); }
+// 탭은 4칸으로 본다(render와 같은 기준). 줄마다 fenced 블록 안(여는·닫는 줄 포함)이면 true.
+function fencedMask(lines) {
+  let fence = null;
+  return lines.map(raw => {
+    const line = raw.replace(/\t/g, '    ');
+    if (fence) { if (closesFence(line, fence)) fence = null; return true; }
+    const m = line.match(FENCE);
+    if (m) { fence = m[1]; return true; }
+    return false;
+  });
+}
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const LIST = /^( *)([-*+]|\d{1,9}[.)])(?: +|$)/;
@@ -237,7 +253,7 @@ function renderBlocks(lines, ctx, opts = {}) {
       const fence = m[1];
       const body = [];
       i++;
-      while (i < lines.length && !(lines[i].trim().startsWith(fence[0].repeat(fence.length)) && lines[i].trim().replace(new RegExp('^\\' + fence[0] + '+'), '').trim() === '')) body.push(lines[i++]);
+      while (i < lines.length && !closesFence(lines[i], fence)) body.push(lines[i++]);
       i++;
       const diagram = m[2] === 'flow' ? renderFlow(body, ctx) : null;
       if (diagram) { out.push(diagram); continue; }
@@ -428,11 +444,10 @@ function renderFlow(lines, ctx) {
 // 정의(제목)로 선언된 ID만 링크 대상이다. 주석과 fenced 예시 속 제목은 정의가 아니다.
 function definedIds(lines) {
   const ids = new Map();
-  let fence = null;
-  for (const line of lines) {
-    const f = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; continue; }
-    if (f) { fence = f[1]; continue; }
+  const fenced = fencedMask(lines);
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced[i]) continue;
+    const line = lines[i];
     const m = line.match(/^ {0,3}#{2,4}\s+((?:REQ|NFR|TEST)-[A-Z0-9]+-\d{3})\b[.,:;]?[ \t]*(.*?)(?:\s+#+)?\s*$/);
     if (m && !ids.has(m[1])) ids.set(m[1], { title: m[2] });
   }
@@ -441,15 +456,8 @@ function definedIds(lines) {
 
 // fenced 예시와 들여쓴 코드 밖의 줄만 돌려준다(줄 번호 대신 줄 배열). 사전 스캔용.
 function visibleLines(lines) {
-  const out = [];
-  let fence = null;
-  for (const line of lines) {
-    const f = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; out.push(''); continue; }
-    if (f) { fence = f[1]; out.push(''); continue; }
-    out.push(line);
-  }
-  return out;
+  const fenced = fencedMask(lines);
+  return lines.map((line, i) => (fenced[i] ? '' : line));
 }
 
 // 추적성 표(Requirement 열이 있는 표)에서 ID별 구현·테스트·상태를 모은다. 기능 목록과 카드 머리가
@@ -716,10 +724,19 @@ function status(projectRoot) {
   const o = lstat(output);
   if (!o) return { status: 'MISSING', output: OUTPUT };
   if (o.isSymbolicLink() || !o.isFile()) return { status: 'UNMANAGED', output: OUTPUT };
-  const meta = readMeta(fs.readFileSync(output, 'utf8'));
+  const current = fs.readFileSync(output, 'utf8');
+  const meta = readMeta(current);
   if (!meta) return { status: 'UNMANAGED', output: OUTPUT };
-  if (meta.hash !== sourceHash(fs.readFileSync(specPath, 'utf8'), readChangelog(root))) return { status: 'STALE', output: OUTPUT, version: meta.version };
-  return { status: 'CURRENT', output: OUTPUT, version: meta.version };
+  const spec = fs.readFileSync(specPath, 'utf8');
+  const changelog = readChangelog(root);
+  if (meta.hash !== sourceHash(spec, changelog)) return { status: 'STALE', output: OUTPUT, version: meta.version };
+  // 이전 판 렌더러가 만든 HTML은 바이트를 비교할 수 없다(레이아웃이 다르다) — 호출자가 경고로 알린다.
+  if (meta.version !== RENDERER_VERSION) return { status: 'CURRENT', output: OUTPUT, version: meta.version };
+  // 해시 한 줄만 맞추고 본문을 손으로 고친 파일도 낡은 것이다. 다시 만들어 바이트로 비교한다.
+  const expected = render(spec, { changelog });
+  const cards = (expected.match(/<section class="card /g) || []).length;
+  if (current !== expected) return { status: 'STALE', output: OUTPUT, version: meta.version, reason: 'content', cards };
+  return { status: 'CURRENT', output: OUTPUT, version: meta.version, cards };
 }
 
 function write(projectRoot) {
@@ -877,7 +894,7 @@ if(r.top<t.top+40||r.bottom>t.bottom-8)toc.scrollTop+=r.top-t.top-toc.clientHeig
 window.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);window.addEventListener('hashchange',update);update();})();
 `.trim();
 
-module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write, activeIndex, plainLanguage };
+module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write, activeIndex, plainLanguage, FENCE, closesFence, fencedMask, cells };
 
 if (require.main === module) {
   try { process.exitCode = main(process.argv.slice(2)); }

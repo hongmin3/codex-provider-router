@@ -27,18 +27,13 @@ const normalize = text => text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
 
 // Preserve line positions, masking comments and fenced examples. This avoids
 // treating a quoted workflow, requirement or Claude import as an active rule.
+// fenced 블록 판정은 렌더러의 규칙(fencedMask) 한 벌을 쓴다 — 두 파서가 다르면 HTML 카드 수와 검사한
+// 요구사항 수가 어긋난다.
 function visibleMarkdown(text) {
   const uncommented = text.replace(/<!--[\s\S]*?(?:-->|$)/g, x => x.replace(/[^\n]/g, ' '));
-  let fence = null;
-  return uncommented.split('\n').map(line => {
-    const marker = line.match(/^\s{0,3}(`{3,}|~{3,})/);
-    if (fence) {
-      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && line.slice(line.indexOf(marker[1]) + marker[1].length).trim() === '') fence = null;
-      return ' '.repeat(line.length);
-    }
-    if (marker) { fence = marker[1]; return ' '.repeat(line.length); }
-    return line;
-  }).join('\n');
+  const lines = uncommented.split('\n');
+  const fenced = loadSpecHtml().fencedMask(lines);
+  return lines.map((line, i) => (fenced[i] ? ' '.repeat(line.length) : line)).join('\n');
 }
 
 function sections(text) {
@@ -54,8 +49,19 @@ function fileToken(token) {
   return !/[<>\n]|\{\{|:\/\//.test(token) && /\.[a-zA-Z0-9]+(?:#[^\s]+)?$/.test(token);
 }
 function testToken(token) {
-  return fileToken(token) && /(?:^|[\\/])tests?[\\/]|(?:^|[\\/])test_[^\\/]+|[._-]test\.[^.]+$|\.(?:test|spec)\.[^.]+$/.test(token);
+  if (!fileToken(token)) return false;
+  // `test-*.js` 이름(키트 방식)은 공백·와일드카드가 없는 경로일 때만 — "node tools\\test-x.js" 같은 명령이나 glob은 파일이 아니다.
+  return /(?:^|[\\/])tests?[\\/]|(?:^|[\\/])test_[^\\/]+|[._-]test\.[^.]+$|\.(?:test|spec)\.[^.]+$/.test(token)
+    || (/(?:^|[\\/])test-[^\\/]+$/.test(token) && !/[\s*?]/.test(token));
 }
+// A tool's own regression suite is referenced as `<tool> --self-test`; the file part must exist.
+const SELF_TEST = /^(\S+\.[a-zA-Z0-9]+) --self-test$/;
+function testRef(token) {
+  if (testToken(token)) return { ref: token, file: token };
+  const m = token.match(SELF_TEST);
+  return m && fileToken(m[1]) ? { ref: token, file: m[1] } : null;
+}
+const STATUSES = ['draft', 'implemented', 'verified', 'deprecated'];
 function inside(root, target) {
   const relative = path.relative(root, target);
   return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
@@ -144,7 +150,7 @@ function checkProject(projectRoot, options = {}) {
     if ([13, 14].some(n => PLACEHOLDER.test(sec.get(n) || ''))) warning('SPEC_OPEN_QUESTIONS', 'SPEC.md: open questions or future proposals remain; review their effect on the current scope');
     const defined = new Map();
     const untitled = [];
-    const headings = [...spec.matchAll(/^#{2,4}\s+((?:REQ|NFR|TEST)-\S+)[^\n]*$/gm)];
+    const headings = [...spec.matchAll(/^ {0,3}#{2,4}\s+((?:REQ|NFR|TEST)-\S+)[^\n]*$/gm)];
     for (let i = 0; i < headings.length; i++) {
       const id = headings[i][1].replace(/[.,:;]+$/, '');
       if (!ID.test(id)) { error('REQUIREMENT_ID_INVALID', `SPEC.md: invalid definition ${id}`); continue; }
@@ -155,7 +161,7 @@ function checkProject(projectRoot, options = {}) {
       result.counts.requirements++;
       // 번호만 보고 무슨 기능인지 알 수 있어야 한다: "### REQ-EXPORT-001 CSV 저장". 기존 SPEC을
       // 막지 않도록 경고로만 알린다. TEST 절차는 검증 대상 ID가 이름 역할을 하므로 제외한다.
-      if (!id.startsWith('TEST-') && !headings[i][0].replace(/^#{2,4}\s+\S+/, '').replace(/^[.,:;\s]+/, '').trim()) untitled.push(id);
+      if (!id.startsWith('TEST-') && !headings[i][0].replace(/^ {0,3}#{2,4}\s+\S+/, '').replace(/^[.,:;\s]+/, '').trim()) untitled.push(id);
     }
     const named = [...defined.keys()].filter(id => !id.startsWith('TEST-')).length;
     if (untitled.length) warning('REQUIREMENT_TITLE_MISSING', `SPEC.md: ${untitled.length} of ${named} REQ/NFR headings have no name (e.g. ${untitled.slice(0, 3).join(', ')}); write "### ${untitled[0]} <기능 이름>" so the ID alone tells what it does`);
@@ -164,14 +170,24 @@ function checkProject(projectRoot, options = {}) {
     const testPaths = new Set(ticks(spec).filter(testToken));
     const traceIds = new Set();
     let header = null;
+    const manualVerified = []; const ungatedVerified = [];
+    // 무엇이 게이트에서 실행되는가: 호출자가 목록을 주면(키트: check-kit.js가 돌리는 테스트) 그 목록,
+    // 아니면 프로젝트의 botyard.json verify 명령이 하나라도 있을 때 그 프로젝트의 테스트 전부로 본다.
+    const gated = options.gatedTests ? ref => options.gatedTests.has(ref.replace(/\\/g, '/')) : (() => {
+      let verify = [];
+      try { verify = JSON.parse(fs.readFileSync(path.join(root, 'botyard.json'), 'utf8')).verify; } catch { /* no gate */ }
+      const on = Array.isArray(verify) && verify.some(v => typeof v === 'string' && v.trim());
+      return () => on;
+    })();
     for (const line of (sec.get(12) || '').split('\n')) {
       if (!line.trim().startsWith('|')) continue;
-      const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(s => s.trim());
+      const cells = loadSpecHtml().cells(line);
       if (cells.some(c => /^(?:Requirement|요구사항)$/i.test(c))) { header = cells; continue; }
       if (!cells.some(c => /\b(?:REQ|NFR|TEST)-/.test(c))) continue;
       const reqCol = header?.findIndex(c => /^(?:Requirement|요구사항)$/i.test(c)) ?? 0;
       const implCol = header?.findIndex(c => /^(?:Implementation|구현)$/i.test(c)) ?? 1;
       const testCol = header?.findIndex(c => /^(?:Test|테스트)$/i.test(c)) ?? 2;
+      const statusCol = header ? header.findIndex(c => /^(?:Status|상태)$/i.test(c)) : 3;
       if (implCol < 0 || testCol < 0) { error('TRACE_COLUMNS_MISSING', 'SPEC.md: traceability table requires Implementation and Test columns'); continue; }
       const rowIds = cells[reqCol]?.match(IDS) || [];
       if (!rowIds.length) continue;
@@ -181,12 +197,31 @@ function checkProject(projectRoot, options = {}) {
       const paths = ticks(cells[implCol] || '').filter(fileToken);
       paths.forEach(p => implPaths.add(p));
       if (!paths.length) error('TRACE_IMPLEMENTATION_MISSING', `SPEC.md: ${rowIds.join(', ')} lacks implementation file reference`);
-      const tests = ticks(cells[testCol] || '').filter(fileToken);
-      tests.forEach(p => testPaths.add(p));
+      // Test 열은 테스트 경로(`tests/…`, `test-*.js` 등), `<도구> --self-test`, 정의된 TEST-ID만 받는다.
+      // 존재하기만 하면 되는 규칙이면 README.md를 적어도 통과한다.
+      const refs = [];
+      for (const token of ticks(cells[testCol] || '')) {
+        const r = testRef(token);
+        if (r) { refs.push(r); testPaths.add(r.file); } else error('TRACE_TEST_INVALID', `SPEC.md: ${rowIds.join(', ')} Test column \`${token}\` is not a test file, "<tool> --self-test" or TEST-ID`);
+      }
       const testIds = (cells[testCol] || '').match(/\bTEST-[A-Z0-9]+-\d{3}\b/g) || [];
-      if (!tests.length && !testIds.some(id => defined.has(id))) error('TRACE_TEST_MISSING', `SPEC.md: ${rowIds.join(', ')} lacks test file or defined TEST procedure`);
+      if (!refs.length && !testIds.some(id => defined.has(id))) error('TRACE_TEST_MISSING', `SPEC.md: ${rowIds.join(', ')} lacks test file or defined TEST procedure`);
+      if (statusCol >= 0) {
+        const value = (cells[statusCol] || '').replace(/`/g, '').trim().toLowerCase();
+        if (!STATUSES.includes(value)) error('TRACE_STATUS_INVALID', `SPEC.md: ${rowIds.join(', ')} Status "${cells[statusCol] || ''}" must be one of ${STATUSES.join(' / ')}`);
+        else if (value === 'verified') {
+          // 자동 테스트 = 표에 적은 테스트 경로, 또는 11절 본문에 테스트 경로가 있는 TEST-ID.
+          const automated = [...refs];
+          for (const id of testIds) for (const token of ticks(defined.get(id) || '')) { const r = testRef(token); if (r) automated.push(r); }
+          if (!automated.length) manualVerified.push(...rowIds);
+          else if (!automated.some(r => gated(r.ref))) ungatedVerified.push(...rowIds);
+        }
+      }
     }
     for (const id of defined.keys()) if (!id.startsWith('TEST-') && !traceIds.has(id)) error('TRACE_REQUIREMENT_MISSING', `SPEC.md: ${id} missing from traceability table`);
+    // 이번 workflow 판에서는 경고다. 다음 판에서 오류로 올린다(docs/project-readiness.md).
+    if (manualVerified.length) warning('TRACE_VERIFIED_MANUAL', `SPEC.md: ${manualVerified.length} verified row(s) have only manual TEST procedures (${manualVerified.slice(0, 5).join(', ')}); set Status to implemented, or add an automated test that the gate runs`);
+    if (ungatedVerified.length) warning('TRACE_VERIFIED_UNGATED', `SPEC.md: ${ungatedVerified.length} verified row(s) have automated tests that no gate runs (${ungatedVerified.slice(0, 5).join(', ')}); ${options.gatedTests ? 'register the test in the gate' : 'add the test command to botyard.json "verify"'}, or set Status to implemented`);
     for (const [kind, paths] of [['IMPLEMENTATION', implPaths], ['TEST', testPaths]]) {
       result.counts[kind === 'TEST' ? 'testPaths' : 'implementationPaths'] = paths.size;
       for (const token of paths) {
@@ -206,8 +241,9 @@ function checkProject(projectRoot, options = {}) {
     const html = specHtml.status(root);
     const regenerate = `run ${specHtml.REGENERATE}`;
     if (html.status === 'MISSING') error('SPEC_HTML_MISSING', `${html.output}: human-readable SPEC view missing; ${regenerate}`);
-    else if (html.status === 'STALE') error('SPEC_HTML_STALE', `${html.output}: generated from an older SPEC.md; ${regenerate}`);
+    else if (html.status === 'STALE') error('SPEC_HTML_STALE', `${html.output}: ${html.reason === 'content' ? 'content differs from a fresh render of SPEC.md (edited by hand?)' : 'generated from an older SPEC.md'}; ${regenerate}`);
     else if (html.status === 'UNMANAGED') error('SPEC_HTML_UNMANAGED', `${html.output}: not generated from SPEC.md (or a symlink); move it aside, then ${regenerate}`);
+    else if (html.cards !== undefined && html.cards !== result.counts.requirements) error('SPEC_HTML_CARDS_MISMATCH', `${html.output}: ${html.cards} requirement cards but ${result.counts.requirements} definitions in SPEC.md; the page would hide or invent requirements`);
     else if (html.version !== specHtml.RENDERER_VERSION) warning('SPEC_HTML_RENDERER_OUTDATED', `${html.output}: rendered by ${html.version}; ${regenerate} for the ${specHtml.RENDERER_VERSION} layout`);
     // 쉬운 말 기준(AGENTS.md "SPEC 문장 쓰기"). 판정이 아니라 다시 읽을 곳을 알린다. 목록은 렌더러 한 벌이다.
     const plain = specHtml.plainLanguage(rawSpec);
@@ -250,4 +286,4 @@ function main(args) {
   }
 }
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { checkProject, visibleMarkdown };
+module.exports = { checkProject, visibleMarkdown, testRef, STATUSES };
