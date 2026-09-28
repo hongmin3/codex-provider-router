@@ -10,12 +10,11 @@ reasoning_effort = "high"
 auto_fallback = true
 auto_return = true
 probe_minutes = [10, 20, 30, 60]
-max_fallback_minutes = 480
 catalog_check_hours = 24
 
 [cost]
-daily_limit_usd = 25.0
-monthly_limit_usd = 100.0
+daily_limit_usd = 0.0
+monthly_limit_usd = 0.0
 # DeepSeek 잔액이 이 금액(USD) 미만이면 세션 시작 시 경고합니다.
 low_balance_usd = 1.0
 

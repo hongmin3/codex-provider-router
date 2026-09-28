@@ -359,12 +359,11 @@ reasoning_effort = "high"
 auto_fallback = true
 auto_return = true
 probe_minutes = [10, 20, 30, 60]
-max_fallback_minutes = 480
 catalog_check_hours = 24
 
 [cost]
-daily_limit_usd = 25.0
-monthly_limit_usd = 100.0
+daily_limit_usd = 0.0
+monthly_limit_usd = 0.0
 low_balance_usd = 1.0
 ```
 
@@ -392,9 +391,11 @@ API Key, access token, session token, password, 원본 오류 본문은 기록�
 
 - fallback 시작 시 provider, model, reasoning을 터미널에 표시한다.
 - 세션 시작·종료·실패를 로그한다.
-- `daily_limit_usd`, `monthly_limit_usd`, `max_fallback_minutes`를 config에서 관리하고,
-  값을 넘으면 DeepSeek 실행을 시작하지 않는다(종료 코드 75, REQ-COST-001). 0 이하는
-  한도 없음이다.
+- `daily_limit_usd`, `monthly_limit_usd`를 config에서 관리한다. 기본값은 0(무제한)이고,
+  양수로 두면 그 금액을 넘을 때 DeepSeek 실행을 시작하지 않는다(종료 코드 75,
+  REQ-COST-001). 0 이하는 한도 없음이다. 시간 기반 한도는 2026-09-22 소유자 결정으로
+  제거했다 — DeepSeek는 선불 잔액을 소비하므로 지출 상한은 잔액(그리고 명시적으로 설정한
+  비용 한도)이 맡는다.
 - 비용은 Codex rollout(`~/.codex/sessions/**/rollout-*.jsonl`)에서 세션 전후 차이만 읽어
   `models.toml` 단가로 환산하고 `~/.codex/router/spend.jsonl`에 기록한다. OpenAI(ChatGPT
   로그인)는 정액제라 비용 한도 계산에서 제외한다.

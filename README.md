@@ -267,7 +267,7 @@ Usage limit이 감지되면 사용자에게 `y/N` 확인을 받은 뒤에만 방
 
 현재 Codex에는 interactive session 중 provider hot-swap API가 없어 usage-limit 문구를 TTY에서 감지한 후 `y/N` 확인을 받고 같은 저장 thread를 방금 끝난 세션 id로 DeepSeek profile `resume <session_id>`합니다. Codex 내부 connect timeout은 custom provider config로 조절할 수 없습니다.
 
-비용·시간 한도는 실제로 실행을 막습니다. DeepSeek(과금 provider) 세션 전에 오늘·이번 달 누적 비용과 fallback 경과 시간을 확인하고, `daily_limit_usd`·`monthly_limit_usd`·`max_fallback_minutes`를 넘었으면 세션을 시작하지 않고 종료 코드 `75`로 끝냅니다(OpenAI ChatGPT 로그인은 정액제라 계산에서 제외). 사용량은 Codex rollout(`~/.codex/sessions/`)에서 세션 전후 차이만 읽어 `models.toml` 단가로 환산하고, `resume`으로 이어진 세션도 이번 실행분만 계산합니다. 한 값을 0으로 두면 그 한도를 쓰지 않습니다.
+비용 한도는 기본값이 무제한(0)입니다. 양수로 설정한 경우에만 실제로 실행을 막습니다 — DeepSeek(과금 provider) 세션 전에 오늘·이번 달 누적 비용을 확인하고, `daily_limit_usd`·`monthly_limit_usd`를 넘었으면 세션을 시작하지 않고 종료 코드 `75`로 끝냅니다(OpenAI ChatGPT 로그인은 정액제라 계산에서 제외). 사용량은 Codex rollout(`~/.codex/sessions/`)에서 세션 전후 차이만 읽어 `models.toml` 단가로 환산하고, `resume`으로 이어진 세션도 이번 실행분만 계산합니다. 한 값을 0으로 두면 그 한도를 쓰지 않습니다. 시간 기반 한도는 없습니다 — DeepSeek는 선불 잔액을 소비하는 과금형이라 지출 상한은 잔액이 맡고, fallback 경과 시간은 `cost` 출력에 진단 정보로만 남습니다.
 
 ```bash
 codex-router cost          # 오늘·이번 달 누적, 한도, fallback 경과, 커버리지
