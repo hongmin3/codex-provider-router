@@ -36,6 +36,7 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Fixed
 
+- REQ-ROUTE-001: Windows에서 인자에 `--`가 들어 있으면 원본 Codex를 부르기 전에 실행이 멈추던 문제를 고쳤다. 예를 들어 `codex mcp add <이름> -- <명령>`이 실패했다. 이제 `--`를 포함한 모든 인자를 순서 그대로 원본 Codex에 넘긴다.
 - NFR-COMPAT-001: Windows에서 저장된 원본 Codex 경로가 사라지거나 Router 자신의 shim을
   가리키면 PATH의 다음 Codex 실행기를 찾아 경로를 복구한다. 유효 경로 보존, 자기 재귀 방지,
   대체 실행기 없음 오류를 PowerShell 회귀 테스트로 검증한다.

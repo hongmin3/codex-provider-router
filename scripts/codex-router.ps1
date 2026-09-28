@@ -1,8 +1,7 @@
-[CmdletBinding()]
-param(
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$RouterArgs
-)
+# No param block: PowerShell's parameter binder treats a bare `--` as its own end-of-parameters
+# marker and then fails to bind (`codex mcp add <name> -- <command>` never reached Codex). The
+# automatic $args keeps every token, `--` included, in order.
+$RouterArgs = @($args)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest

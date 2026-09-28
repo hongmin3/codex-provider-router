@@ -196,6 +196,43 @@ class WindowsScriptTests(unittest.TestCase):
             self.assertEqual(result.stdout.strip(), "SAVED_CODEX --version")
             self.assertEqual(path_file.read_text(encoding="ascii"), str(saved))
 
+    # Validates: REQ-ROUTE-001 (the user's command reaches the original Codex unchanged).
+    # `codex mcp add <name> -- <command>` and `codex exec -- ...` need a literal `--`. PowerShell
+    # reads `--` as its own end-of-parameters marker, so a bare `--` used to fail the router's
+    # parameter binding before the original Codex was ever called.
+    @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell")
+    def test_router_forwards_a_double_dash_argument_unchanged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            install_dir = root / "CodexProviderRouter"
+            router_bin = install_dir / "bin"
+            saved_bin = root / "saved"
+            router_bin.mkdir(parents=True)
+            saved_bin.mkdir()
+            shutil.copy2(SCRIPTS / "codex-router.ps1", install_dir / "codex-router.ps1")
+            shutil.copy2(SCRIPTS / "codex.cmd", router_bin / "codex.cmd")
+            saved = saved_bin / "codex.cmd"
+            saved.write_text("@echo off\r\necho SAVED_CODEX %*\r\nexit /b 0\r\n", encoding="ascii")
+            (install_dir / "real-codex-path.txt").write_text(str(saved), encoding="ascii")
+            env = os.environ.copy()
+            env["PATH"] = os.pathsep.join((str(router_bin), env["PATH"]))
+
+            result = subprocess.run(
+                ["cmd.exe", "/d", "/c", str(router_bin / "codex.cmd"),
+                 "mcp", "add", "playwright", "--", "node", "launch.js", "playwright"],
+                env=env,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                result.stdout.strip(),
+                "SAVED_CODEX mcp add playwright -- node launch.js playwright",
+            )
+
     @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell")
     def test_router_keeps_the_missing_path_error_when_no_alternative_exists(self):
         powershell = shutil.which("powershell.exe")

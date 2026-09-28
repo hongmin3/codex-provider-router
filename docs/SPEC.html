@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="botyard render-spec-html v6">
 <meta name="spec-html-renderer" content="v6">
-<meta name="spec-source-sha256" content="46122b7e76ba8133579f5d38bcf11b6f7c6403f01cc9992195e6c275816fd0ca">
+<meta name="spec-source-sha256" content="a4828e1a9d8ffa5dadd4d308fb5c645f44730f0131982fa79face47110ee2be4">
 <title>Codex Provider Router 사양서</title>
 <style>:root{--bg:#f7f8fa;--panel:#fff;--text:#1d2330;--muted:#5d6678;--line:#e2e6ee;--accent:#2f6fde;--code:#f1f3f7;
 --req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;
@@ -272,9 +272,10 @@ Windows DPAPI 네 곳이다. 설치 후 실제 경로 배치는 <code>USAGE_AND_
 <section class="card kind-req" id="REQ-ROUTE-001">
 <h3><span class="idtag">REQ-ROUTE-001</span></h3>
 <div class="card-meta"><span class="badge st-implemented">implemented</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code>, <code>scripts/codex-router.ps1</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-COMPAT-001">TEST-COMPAT-001</a> (Windows 부분 검증)</span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-COMPAT-001">TEST-COMPAT-001</a></span></div>
-<details class="history"><summary>변경 이력 1</summary>
+<details class="history"><summary>변경 이력 2</summary>
 <ul>
 <li><span class="hist">[Unreleased] · Changed</span> <a class="idref" href="#REQ-ROUTE-001">REQ-ROUTE-001</a>: 기존 <a class="idref" href="#TEST-COMPAT-001">TEST-COMPAT-001</a>의 Windows 원본 실행기 전달·경로 보존·자기 shim 재귀 방지 검사를 연결했다. 사양 동작과 구현은 변경하지 않았으며 Python/macOS 전체 계약은 미검증으로 구분했다.</li>
+<li><span class="hist">[Unreleased] · Fixed</span> <a class="idref" href="#REQ-ROUTE-001">REQ-ROUTE-001</a>: Windows에서 인자에 <code>--</code>가 들어 있으면 원본 Codex를 부르기 전에 실행이 멈추던 문제를 고쳤다. 예를 들어 <code>codex mcp add &lt;이름&gt; -- &lt;명령&gt;</code>이 실패했다. 이제 <code>--</code>를 포함한 모든 인자를 순서 그대로 원본 Codex에 넘긴다.</li>
 </ul>
 </details>
 <section class="field"><h4>목적</h4><div class="field-body">
