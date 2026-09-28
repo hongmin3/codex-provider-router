@@ -28,6 +28,7 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Changed
 
+- REQ-ROUTE-001: 기존 TEST-COMPAT-001의 Windows 원본 실행기 전달·경로 보존·자기 shim 재귀 방지 검사를 연결했다. 사양 동작과 구현은 변경하지 않았으며 Python/macOS 전체 계약은 미검증으로 구분했다.
 - 한도를 0 이하로 두면 그 한도를 쓰지 않는다. OpenAI(ChatGPT 로그인)는 정액제라 비용 한도
   계산에서 제외하고, 그 사실을 `cost` 출력에 표시한다.
 - SPEC.md: Project Version 1.0.0, Owner 역할명 지정. `daily_limit_usd`류가 "참고값"이라는

@@ -1,5 +1,7 @@
 # Progress
 
+- 2026-09-21: REQ-ROUTE-001의 비어 있던 테스트 추적성을 기존 TEST-COMPAT-001의 Windows 부분 검증으로 연결했다. `tests/test_windows_scripts.py`의 원본 전달 정적 검사와 경로 복구·자기 shim 거부·유효 경로 보존·대체 경로 없음 검사 5개가 임시 합성 실행기만 사용해 통과했다. 실제 provider·사용자 설정·자격증명은 호출/열람하지 않았다. Python/macOS 전체 wrapper 계약 검증은 남아 있으며 상태는 implemented를 유지한다. SPEC/CHANGELOG/progress는 변경 전 로컬 governance 백업으로 보존했다.
+
 - 2026-09-13: Codex 0.154.0, ChatGPT login, DeepSeek Responses API 기준 Router 구축·설치.
 - 기본 fallback은 `deepseek-flash + high`; `flash`, `pro`, `vision` alias와 reasoning 영구 설정 지원.
 - OpenAI/DeepSeek 실 API, state simulation, checkpoint, Keychain, shell/apply_patch/Git/MCP 보존 테스트 완료.

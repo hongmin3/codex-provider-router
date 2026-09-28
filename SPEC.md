@@ -113,7 +113,8 @@ ID 규칙: `REQ-<CATEGORY>-NNN`. CATEGORY는 대문자·숫자, NNN은 세 자�
 `src/codex_router.py`
 
 #### 관련 테스트
-(없음)
+TEST-COMPAT-001 (Windows 원본 실행기 전달·경로 보존·자기 shim 재귀 방지 범위).
+Python/macOS의 호출 이름 분기·child 우회 표시·일반 비대화형 전달 전체 계약은 별도 검증이 남아 있다.
 
 ### REQ-ROUTE-002
 
@@ -758,7 +759,7 @@ Key는 자격증명 저장소에만 들어가고 설치본·shim·출력·사용
 ### TEST-COMPAT-001
 
 #### 검증 대상
-NFR-COMPAT-001
+NFR-COMPAT-001, REQ-ROUTE-001의 Windows 원본 실행기 전달·재귀 방지 부분.
 
 #### 선행 조건
 설치 스크립트를 임시 디렉터리 대상으로 실행하거나 정적으로 검사한다.
@@ -779,6 +780,10 @@ NFR-COMPAT-001
 catalog 내려받기가 실패하면 기존 설치를 건드리지 않고, 설치가 원본 Codex를 보존하며,
 일반 실행은 원본 Codex로 전달된다. Windows에서 저장 경로가 사라졌거나 자신의 shim이면
 PATH의 다음 실행기로 복구하고, 유효한 저장 경로는 유지하며, 대체 실행기가 없으면 실패한다.
+
+REQ-ROUTE-001의 이 연결은 Windows 부분 검증이다. 원본 Codex 대신 임시 합성 실행기를 쓰며,
+실제 provider·사용자 설정·자격증명을 검증하지 않는다. Python/macOS의 호출 이름별 분기,
+child 우회 표시, 일반 비대화형 전달까지 이 테스트가 검증한다고 해석하지 않는다.
 
 ### TEST-UX-001
 
@@ -862,7 +867,7 @@ session id 탐색은 provider(`openai`)·작업 디렉터리(Unicode 정규화 �
 
 | Requirement | Implementation | Test | Status |
 |---|---|---|---|
-| REQ-ROUTE-001 | `src/codex_router.py` | (없음) | implemented |
+| REQ-ROUTE-001 | `src/codex_router.py`, `scripts/codex-router.ps1` | TEST-COMPAT-001 (Windows 부분 검증) | implemented |
 | REQ-ROUTE-002 | `src/codex_router.py` | TEST-ROUTE-001 | verified |
 | REQ-ROUTE-003 | `src/codex_router.py` | TEST-ROUTE-002 | verified |
 | REQ-ROUTE-004 | `src/codex_router.py` | TEST-ROUTE-003 | verified |
