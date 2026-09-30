@@ -42,6 +42,19 @@ Router가 하는 일은 다음과 같다.
 - 사용자는 provider마다 다른 명령을 외우지 않아도 된다.
 - provider가 바뀌어도 작업 맥락, 파일, Codex 대화 기록이 그대로 남는다.
 
+### 한눈에 보기
+
+사용자가 늘 쓰던 `codex` 명령을 치면 Router가 먼저 받아 provider를 고른다. OpenAI 한도가 차면 허락을 받아 같은 대화를 DeepSeek로 이어 가고, 한도가 풀리면 OpenAI로 돌아온다.
+
+```flow
+codex 실행 -> Router가 provider 고르기 -> OpenAI로 Codex 실행 -> 작업 계속
+OpenAI로 Codex 실행 -(한도 다 참)-> checkpoint 저장 -> 넘겨 쓸지 묻기 -> 비용 한도 확인 -> DeepSeek로 이어 열기 -> 작업 계속
+넘겨 쓸지 묻기 -(거절·자동 실행)-> OpenAI 그대로 두기
+비용 한도 확인 -(초과)-> 실행 안 함·이유 안내
+DeepSeek로 이어 열기 -> 한도 풀림 확인(probe) -> OpenAI로 Codex 실행
+deep 명령 -> 비용 한도 확인
+```
+
 ### 이 문서에서 쓰는 말
 
 아래 말은 `docs/SPEC.html`에서 마우스를 올리면 뜻이 보인다.

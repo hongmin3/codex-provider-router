@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="generator" content="botyard render-spec-html v6">
-<meta name="spec-html-renderer" content="v6">
-<meta name="spec-source-sha256" content="6eaa31708dc57faf9d026f52c4ca5f735f23c8f762f6b37e18a9cba34a1df8cd">
+<meta name="generator" content="botyard render-spec-html v7">
+<meta name="spec-html-renderer" content="v7">
+<meta name="spec-source-sha256" content="126f2f64fa35579f63c94390f8c6f590e92735c7b7fdf2ca0fe189fa2b27b7c8">
 <title>Codex Provider Router 사양서</title>
 <style>:root{--bg:#f7f8fa;--panel:#fff;--text:#1d2330;--muted:#5d6678;--line:#e2e6ee;--accent:#2f6fde;--code:#f1f3f7;
 --req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;
@@ -16,8 +16,8 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;word-break:keep-all;overflow-wrap:break-word}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border-radius:4px;padding:.1em .35em}
-pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto}pre code{background:none;padding:0}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border-radius:4px;padding:.1em .35em;overflow-wrap:anywhere}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}pre code{background:none;padding:0}
 .top{background:var(--panel);border-bottom:1px solid var(--line);padding:24px 32px}
 .top h1{margin:0 0 12px;font-size:26px;line-height:1.3}
 .chips,.stats{display:flex;flex-wrap:wrap;gap:8px}.chips{margin-bottom:14px}
@@ -26,7 +26,7 @@ pre{background:var(--code);border:1px solid var(--line);border-radius:8px;paddin
 .stat{border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:96px;background:var(--bg)}
 .stat b{display:block;font-size:22px;line-height:1.2}.stat span{font-size:12px;color:var(--muted)}
 .stat.st-draft b{color:var(--draft)}.stat.st-implemented b{color:var(--implemented)}.stat.st-verified b{color:var(--verified)}.stat.st-deprecated b{color:var(--deprecated)}
-.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;max-width:1280px;margin:0 auto;padding:24px 32px}
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px;max-width:1800px;margin:0 auto;padding:24px 24px}
 .toc{position:sticky;top:16px;align-self:start;max-height:calc(100vh - 32px);overflow:auto;font-size:13px}
 .toc input{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);margin-bottom:10px;font:inherit}
 .toc ul{list-style:none;margin:0;padding:0}.toc li{margin:1px 0}.toc a{display:block;padding:2px 8px;border-radius:6px;color:var(--text)}
@@ -41,6 +41,7 @@ main{min-width:0}
 .card{padding:4px 20px 12px}.card p,.card li{max-width:46em}.card p{margin:.4em 0 .9em;line-height:1.85}
 .field{display:grid;grid-template-columns:7.5em minmax(0,1fr);gap:0 18px;border-top:1px solid var(--line);padding:10px 0 2px}
 .field>h4,.field>h5,.field>h6{margin:.15em 0 0;font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.field-body{min-width:0}
 .field-body>:first-child{margin-top:0}.field-body>:last-child{margin-bottom:.4em}
 .field-body ol{list-style:none;counter-reset:step;padding-left:0}
 .field-body ol>li{counter-increment:step;position:relative;padding-left:2.1em;margin:.45em 0}
@@ -56,13 +57,15 @@ p.why{color:var(--muted);border-left:3px solid var(--line);padding-left:10px}.wh
 .idtag{font:600 13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--req);color:#fff;border-radius:6px;padding:2px 8px}
 .kind-nfr .idtag{background:var(--nfr)}.kind-test .idtag{background:var(--test)}
 .idref{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;white-space:nowrap}
+td .idref,.meta .idref{white-space:normal;overflow-wrap:anywhere}td .badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .idtag,.badge{white-space:nowrap}
-.card-meta{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;margin:2px 0 6px}
+.card-meta{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;justify-items:start;font-size:13px;margin:2px 0 6px}
+.meta{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .meta b{color:var(--muted);font-weight:600;margin-right:4px}
 details.history{font-size:13px;margin:4px 0 8px}details.history summary{cursor:pointer;color:var(--muted)}
 details.history ul{margin:6px 0;padding-left:18px}.hist{color:var(--muted);font-size:12px}
 tr.group th{background:var(--bg);text-align:left;font-size:14px;padding-top:12px}.gcode{font:600 12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:4px}
-table.index td:first-child{white-space:nowrap}table.index td:nth-child(2){min-width:10em}table.index td:nth-child(4){min-width:13em}.untitled{color:var(--muted);font-style:italic}
+table.index th:nth-child(1){width:16%}table.index th:nth-child(2){width:24%}table.index th:nth-child(3){width:12%}table.index th:nth-child(4){width:24%}table.index th:nth-child(5){width:24%}.untitled{color:var(--muted);font-style:italic}
 .toc .toc-id span{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:var(--text)}
 .toc a.active{background:var(--code);color:var(--accent);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}.toc a.in-chapter{color:var(--accent)}
 figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-width:100%;height:auto;margin:0 auto}
@@ -73,16 +76,17 @@ figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-widt
 .nohist{color:var(--muted)}
 main img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
 .table-wrap{overflow-x:auto;margin:10px 0}
-table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:14px}th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
 th{background:var(--code);font-weight:600}
 .badge{display:inline-block;border-radius:999px;padding:0 10px;font-size:12px;font-weight:600;color:#fff;background:var(--draft)}
 .st-implemented.badge{background:var(--implemented)}.st-verified.badge{background:var(--verified)}.st-deprecated.badge{background:var(--deprecated)}.st-active.badge{background:var(--active)}
 blockquote{margin:10px 0;padding:4px 16px;border-left:4px solid var(--line);color:var(--muted)}
 li.task{list-style:none;margin-left:-1.2em}
 hr{border:0;border-top:1px solid var(--line);margin:20px 0}
-footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);font-size:13px}
+footer{max-width:1800px;margin:0 auto;padding:8px 24px 40px;color:var(--muted);font-size:13px}
 .hidden{display:none}
 @media (max-width:860px){.field{grid-template-columns:1fr}.layout{grid-template-columns:1fr;padding:16px}.toc{position:static;max-height:260px}.top{padding:18px 16px}.chapter{padding:2px 14px 12px}footer{padding:8px 16px 32px}}
+@media screen and (max-width:600px){table.responsive,table.responsive tbody,table.responsive tr,table.responsive td{display:block;width:100%}table.responsive thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}table.responsive tr{margin-bottom:12px;border:1px solid var(--line);border-radius:6px}table.responsive td{border:0;border-top:1px solid var(--line)}table.responsive td::before{content:attr(data-label);display:block;font-size:12px;font-weight:600;color:var(--muted)}table.responsive tr.group th{display:block;width:100%;border:0}.card{padding:4px 12px 12px}}
 @media print{.toc,footer{display:none}.layout{display:block;padding:0}.chapter{break-inside:auto;border:0}.card{break-inside:avoid}body{background:#fff}}</style>
 </head>
 <body>
@@ -149,39 +153,39 @@ footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);f
 <main>
 <section class="chapter" id="feature-index">
 <h2>기능 목록</h2>
-<div class="table-wrap"><table class="index">
+<div class="table-wrap"><table class="index responsive">
 <thead><tr><th>ID</th><th>이름</th><th>상태</th><th>구현</th><th>테스트</th></tr></thead>
 <tbody>
 <tr class="group"><th colspan="5"><span class="gcode">ROUTE</span> provider 라우팅</th></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-001">REQ-ROUTE-001</a></td><td>기존 codex 명령 그대로 쓰기</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-005">TEST-ROUTE-005</a></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-002">REQ-ROUTE-002</a></td><td>provider를 바꾸기 전에 묻기</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-003">REQ-ROUTE-003</a></td><td>남은 한도 안내를 소진으로 잘못 읽지 않기</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-004">REQ-ROUTE-004</a></td><td>한도가 풀리면 OpenAI로 자동 복귀</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-005">REQ-ROUTE-005</a></td><td>DeepSeek 바로 쓰기</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-ROUTE-001">REQ-ROUTE-001</a></td><td data-label="이름">기존 codex 명령 그대로 쓰기</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-ROUTE-005">TEST-ROUTE-005</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-ROUTE-002">REQ-ROUTE-002</a></td><td data-label="이름">provider를 바꾸기 전에 묻기</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-ROUTE-003">REQ-ROUTE-003</a></td><td data-label="이름">남은 한도 안내를 소진으로 잘못 읽지 않기</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-ROUTE-004">REQ-ROUTE-004</a></td><td data-label="이름">한도가 풀리면 OpenAI로 자동 복귀</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-ROUTE-005">REQ-ROUTE-005</a></td><td data-label="이름">DeepSeek 바로 쓰기</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">STATE</span> 상태 관리</th></tr>
-<tr><td><a class="idref" href="#REQ-STATE-001">REQ-STATE-001</a></td><td>상태 파일이 깨져도 계속 쓸 수 있게 하기</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-STATE-001">REQ-STATE-001</a></td><td data-label="이름">상태 파일이 깨져도 계속 쓸 수 있게 하기</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">CTX</span> 작업 맥락</th></tr>
-<tr><td><a class="idref" href="#REQ-CTX-001">REQ-CTX-001</a></td><td>provider가 바뀌어도 작업 맥락 유지</td><td><span class="badge st-implemented">implemented</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-CTX-001">TEST-CTX-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-CTX-001">REQ-CTX-001</a></td><td data-label="이름">provider가 바뀌어도 작업 맥락 유지</td><td data-label="상태"><span class="badge st-implemented">implemented</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-CTX-001">TEST-CTX-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">MODEL</span> 모델 설정</th></tr>
-<tr><td><a class="idref" href="#REQ-MODEL-001">REQ-MODEL-001</a></td><td>DeepSeek 모델·reasoning 설정 유지</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-MODEL-001">REQ-MODEL-001</a></td><td data-label="이름">DeepSeek 모델·reasoning 설정 유지</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">CATALOG</span> 모델 목록</th></tr>
-<tr><td><a class="idref" href="#REQ-CATALOG-001">REQ-CATALOG-001</a></td><td>DeepSeek 모델 목록 자동 갱신</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-CATALOG-001">REQ-CATALOG-001</a></td><td data-label="이름">DeepSeek 모델 목록 자동 갱신</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">BALANCE</span> 잔액 확인</th></tr>
-<tr><td><a class="idref" href="#REQ-BALANCE-001">REQ-BALANCE-001</a></td><td>DeepSeek 잔액 부족 미리 알리기</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code>, <code>src/model_router.py</code></td><td><a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-BALANCE-001">REQ-BALANCE-001</a></td><td data-label="이름">DeepSeek 잔액 부족 미리 알리기</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code>, <code>src/model_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">ERR</span> 오류 안내</th></tr>
-<tr><td><a class="idref" href="#REQ-ERR-001">REQ-ERR-001</a></td><td>DeepSeek 실패 안내</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-ERR-001">REQ-ERR-001</a></td><td data-label="이름">DeepSeek 실패 안내</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">AIROUTE</span> 모델 추천</th></tr>
-<tr><td><a class="idref" href="#REQ-AIROUTE-001">REQ-AIROUTE-001</a></td><td>작업별 모델 추천</td><td><span class="badge st-verified">verified</span></td><td><code>src/model_router.py</code></td><td><a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-AIROUTE-001">REQ-AIROUTE-001</a></td><td data-label="이름">작업별 모델 추천</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/model_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">COST</span> 비용 한도</th></tr>
-<tr><td><a class="idref" href="#REQ-COST-001">REQ-COST-001</a></td><td>비용 한도를 넘으면 실행 막기</td><td><span class="badge st-implemented">implemented</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-COST-002">TEST-COST-002</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#REQ-COST-001">REQ-COST-001</a></td><td data-label="이름">비용 한도를 넘으면 실행 막기</td><td data-label="상태"><span class="badge st-implemented">implemented</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-COST-002">TEST-COST-002</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">NFR SEC</span> 보안</th></tr>
-<tr><td><a class="idref" href="#NFR-SEC-001">NFR-SEC-001</a></td><td>API Key 안전 보관</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code>, <code>scripts/install.sh</code>, <code>scripts/install.ps1</code></td><td><a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#NFR-SEC-001">NFR-SEC-001</a></td><td data-label="이름">API Key 안전 보관</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code>, <code>scripts/install.sh</code>, <code>scripts/install.ps1</code></td><td data-label="테스트"><a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">NFR COMPAT</span> 호환성</th></tr>
-<tr><td><a class="idref" href="#NFR-COMPAT-001">NFR-COMPAT-001</a></td><td>기존 Codex 환경 보존</td><td><span class="badge st-verified">verified</span></td><td><code>scripts/install.sh</code>, <code>scripts/uninstall.sh</code>, <code>scripts/install.ps1</code>, <code>scripts/uninstall.ps1</code>, <code>scripts/codex-router.ps1</code></td><td><a class="idref" href="#TEST-COMPAT-001">TEST-COMPAT-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#NFR-COMPAT-001">NFR-COMPAT-001</a></td><td data-label="이름">기존 Codex 환경 보존</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>scripts/install.sh</code>, <code>scripts/uninstall.sh</code>, <code>scripts/install.ps1</code>, <code>scripts/uninstall.ps1</code>, <code>scripts/codex-router.ps1</code></td><td data-label="테스트"><a class="idref" href="#TEST-COMPAT-001">TEST-COMPAT-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">NFR UX</span> 화면 표시</th></tr>
-<tr><td><a class="idref" href="#NFR-UX-001">NFR-UX-001</a></td><td>Codex TUI 화면 보존</td><td><span class="badge st-verified">verified</span></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-UX-001">TEST-UX-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#NFR-UX-001">NFR-UX-001</a></td><td data-label="이름">Codex TUI 화면 보존</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/codex_router.py</code></td><td data-label="테스트"><a class="idref" href="#TEST-UX-001">TEST-UX-001</a></td></tr>
 <tr class="group"><th colspan="5"><span class="gcode">NFR COST</span> 비용 한도</th></tr>
-<tr><td><a class="idref" href="#NFR-COST-001">NFR-COST-001</a></td><td>provider 고르기에 추가 비용 없음</td><td><span class="badge st-verified">verified</span></td><td><code>src/model_router.py</code>, <code>config/config.toml</code></td><td><a class="idref" href="#TEST-COST-001">TEST-COST-001</a></td></tr>
+<tr><td data-label="ID"><a class="idref" href="#NFR-COST-001">NFR-COST-001</a></td><td data-label="이름">provider 고르기에 추가 비용 없음</td><td data-label="상태"><span class="badge st-verified">verified</span></td><td data-label="구현"><code>src/model_router.py</code>, <code>config/config.toml</code></td><td data-label="테스트"><a class="idref" href="#TEST-COST-001">TEST-COST-001</a></td></tr>
 </tbody>
 </table></div>
 </section>
@@ -216,6 +220,38 @@ footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);f
 <li>사용자는 <span class="term" title="Codex가 요청을 보내는 AI 서비스 회사. 이 문서에서는 OpenAI와 DeepSeek 두 곳이다" tabindex="0">provider</span>마다 다른 명령을 외우지 않아도 된다.</li>
 <li><span class="term" title="Codex가 요청을 보내는 AI 서비스 회사. 이 문서에서는 OpenAI와 DeepSeek 두 곳이다" tabindex="0">provider</span>가 바뀌어도 작업 맥락, 파일, Codex 대화 기록이 그대로 남는다.</li>
 </ul>
+<h3>한눈에 보기</h3>
+<p>사용자가 늘 쓰던 <code>codex</code> 명령을 치면 Router가 먼저 받아 <span class="term" title="Codex가 요청을 보내는 AI 서비스 회사. 이 문서에서는 OpenAI와 DeepSeek 두 곳이다" tabindex="0">provider</span>를 고른다. OpenAI 한도가 차면 허락을 받아 같은 대화를 DeepSeek로 이어 가고, 한도가 풀리면 OpenAI로 돌아온다.</p>
+<figure class="flow">
+<svg viewBox="0 0 384 612" width="384" height="612" role="img" aria-label="codex 실행 → Router가 provider 고르기, Router가 provider 고르기 → OpenAI로 Codex 실행, OpenAI로 Codex 실행 → 작업 계속, OpenAI로 Codex 실행 → checkpoint 저장, checkpoint 저장 → 넘겨 쓸지 묻기, 넘겨 쓸지 묻기 → 비용 한도 확인, 비용 한도 확인 → DeepSeek로 이어 열기, DeepSeek로 이어 열기 → 작업 계속, 넘겨 쓸지 묻기 → OpenAI 그대로 두기, 비용 한도 확인 → 실행 안 함·이유 안내, DeepSeek로 이어 열기 → 한도 풀림 확인(probe), 한도 풀림 확인(probe) → OpenAI로 Codex 실행, deep 명령 → 비용 한도 확인">
+<defs><marker id="flow-arrow-1" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z"/></marker></defs>
+<path class="edge" d="M125 44 L181 88" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M181 124 L181 168" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M181 204 L84 568" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M181 204 L181 248" marker-end="url(#flow-arrow-1)"/><text class="elabel" x="181" y="226">한도 다 참</text>
+<path class="edge" d="M181 284 L181 328" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M181 364 L94.5 408" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M94.5 444 L90 488" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M90 524 L84 568" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M181 364 L251.5 408" marker-end="url(#flow-arrow-1)"/><text class="elabel" x="216.3" y="386">거절·자동 실행</text>
+<path class="edge" d="M94.5 444 L275 488" marker-end="url(#flow-arrow-1)"/><text class="elabel" x="184.8" y="466">초과</text>
+<path class="edge" d="M90 524 L235 568" marker-end="url(#flow-arrow-1)"/>
+<path class="edge back" d="M320 586 H366 V186 H261.5" marker-end="url(#flow-arrow-1)"/>
+<path class="edge" d="M240.5 44 L94.5 408" marker-end="url(#flow-arrow-1)"/>
+<g class="node"><rect x="77.5" y="8" width="95" height="36" rx="8"/><text x="125" y="26">codex 실행</text></g>
+<g class="node"><rect x="83" y="88" width="196" height="36" rx="8"/><text x="181" y="106">Router가 provider 고르기</text></g>
+<g class="node"><rect x="100.5" y="168" width="161" height="36" rx="8"/><text x="181" y="186">OpenAI로 Codex 실행</text></g>
+<g class="node"><rect x="42" y="568" width="84" height="36" rx="8"/><text x="84" y="586">작업 계속</text></g>
+<g class="node"><rect x="114.5" y="248" width="133" height="36" rx="8"/><text x="181" y="266">checkpoint 저장</text></g>
+<g class="node"><rect x="122.5" y="328" width="117" height="36" rx="8"/><text x="181" y="346">넘겨 쓸지 묻기</text></g>
+<g class="node"><rect x="36" y="408" width="117" height="36" rx="8"/><text x="94.5" y="426">비용 한도 확인</text></g>
+<g class="node"><rect x="8" y="488" width="164" height="36" rx="8"/><text x="90" y="506">DeepSeek로 이어 열기</text></g>
+<g class="node"><rect x="177" y="408" width="149" height="36" rx="8"/><text x="251.5" y="426">OpenAI 그대로 두기</text></g>
+<g class="node"><rect x="196" y="488" width="158" height="36" rx="8"/><text x="275" y="506">실행 안 함·이유 안내</text></g>
+<g class="node"><rect x="150" y="568" width="170" height="36" rx="8"/><text x="235" y="586">한도 풀림 확인(probe)</text></g>
+<g class="node"><rect x="196.5" y="8" width="88" height="36" rx="8"/><text x="240.5" y="26">deep 명령</text></g>
+</svg>
+</figure>
 <h3>이 문서에서 쓰는 말</h3>
 <p>아래 말은 <code>docs/SPEC.html</code>에서 마우스를 올리면 뜻이 보인다.</p>
 <div class="table-wrap"><table>
@@ -1421,26 +1457,26 @@ Codex가 읽는 DeepSeek <span class="term" title="Codex가 어느 provider와 �
 </section>
 <section class="chapter" id="sec-12">
 <h2>12. 요구사항 추적성</h2>
-<div class="table-wrap"><table>
+<div class="table-wrap"><table class="responsive">
 <thead><tr><th>Requirement</th><th>Implementation</th><th>Test</th><th>Status</th></tr></thead>
 <tbody>
-<tr><td><a class="idref" href="#REQ-ROUTE-001">REQ-ROUTE-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-005">TEST-ROUTE-005</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-002">REQ-ROUTE-002</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-003">REQ-ROUTE-003</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-004">REQ-ROUTE-004</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-ROUTE-005">REQ-ROUTE-005</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-STATE-001">REQ-STATE-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-CTX-001">REQ-CTX-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-CTX-001">TEST-CTX-001</a></td><td><span class="badge st-implemented">implemented</span></td></tr>
-<tr><td><a class="idref" href="#REQ-MODEL-001">REQ-MODEL-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-CATALOG-001">REQ-CATALOG-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-BALANCE-001">REQ-BALANCE-001</a></td><td><code>src/codex_router.py</code>, <code>src/model_router.py</code></td><td><a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-ERR-001">REQ-ERR-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-AIROUTE-001">REQ-AIROUTE-001</a></td><td><code>src/model_router.py</code></td><td><a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#NFR-SEC-001">NFR-SEC-001</a></td><td><code>src/codex_router.py</code>, <code>scripts/install.sh</code>, <code>scripts/install.ps1</code></td><td><a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#NFR-COMPAT-001">NFR-COMPAT-001</a></td><td><code>scripts/install.sh</code>, <code>scripts/uninstall.sh</code>, <code>scripts/install.ps1</code>, <code>scripts/uninstall.ps1</code>, <code>scripts/codex-router.ps1</code></td><td><a class="idref" href="#TEST-COMPAT-001">TEST-COMPAT-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#NFR-UX-001">NFR-UX-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-UX-001">TEST-UX-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#NFR-COST-001">NFR-COST-001</a></td><td><code>src/model_router.py</code>, <code>config/config.toml</code></td><td><a class="idref" href="#TEST-COST-001">TEST-COST-001</a></td><td><span class="badge st-verified">verified</span></td></tr>
-<tr><td><a class="idref" href="#REQ-COST-001">REQ-COST-001</a></td><td><code>src/codex_router.py</code></td><td><a class="idref" href="#TEST-COST-002">TEST-COST-002</a></td><td><span class="badge st-implemented">implemented</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-ROUTE-001">REQ-ROUTE-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-ROUTE-005">TEST-ROUTE-005</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-ROUTE-002">REQ-ROUTE-002</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-ROUTE-001">TEST-ROUTE-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-ROUTE-003">REQ-ROUTE-003</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-ROUTE-004">REQ-ROUTE-004</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-ROUTE-003">TEST-ROUTE-003</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-ROUTE-005">REQ-ROUTE-005</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-ROUTE-004">TEST-ROUTE-004</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-STATE-001">REQ-STATE-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-STATE-001">TEST-STATE-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-CTX-001">REQ-CTX-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-CTX-001">TEST-CTX-001</a></td><td data-label="Status"><span class="badge st-implemented">implemented</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-MODEL-001">REQ-MODEL-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-MODEL-001">TEST-MODEL-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-CATALOG-001">REQ-CATALOG-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-CATALOG-001">TEST-CATALOG-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-BALANCE-001">REQ-BALANCE-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code>, <code>src/model_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-BALANCE-001">TEST-BALANCE-001</a>, <a class="idref" href="#TEST-BALANCE-002">TEST-BALANCE-002</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-ERR-001">REQ-ERR-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-ERR-001">TEST-ERR-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-AIROUTE-001">REQ-AIROUTE-001</a></td><td data-label="Implementation"><code>src/model_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-AIROUTE-001">TEST-AIROUTE-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#NFR-SEC-001">NFR-SEC-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code>, <code>scripts/install.sh</code>, <code>scripts/install.ps1</code></td><td data-label="Test"><a class="idref" href="#TEST-SEC-001">TEST-SEC-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#NFR-COMPAT-001">NFR-COMPAT-001</a></td><td data-label="Implementation"><code>scripts/install.sh</code>, <code>scripts/uninstall.sh</code>, <code>scripts/install.ps1</code>, <code>scripts/uninstall.ps1</code>, <code>scripts/codex-router.ps1</code></td><td data-label="Test"><a class="idref" href="#TEST-COMPAT-001">TEST-COMPAT-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#NFR-UX-001">NFR-UX-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-UX-001">TEST-UX-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#NFR-COST-001">NFR-COST-001</a></td><td data-label="Implementation"><code>src/model_router.py</code>, <code>config/config.toml</code></td><td data-label="Test"><a class="idref" href="#TEST-COST-001">TEST-COST-001</a></td><td data-label="Status"><span class="badge st-verified">verified</span></td></tr>
+<tr><td data-label="Requirement"><a class="idref" href="#REQ-COST-001">REQ-COST-001</a></td><td data-label="Implementation"><code>src/codex_router.py</code></td><td data-label="Test"><a class="idref" href="#TEST-COST-002">TEST-COST-002</a></td><td data-label="Status"><span class="badge st-implemented">implemented</span></td></tr>
 </tbody>
 </table></div>
 <p>Status 값: <code>draft</code> (사양만 있음) / <code>implemented</code> / <code>verified</code> (실제 실행까지 확인) /

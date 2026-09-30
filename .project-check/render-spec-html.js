@@ -19,7 +19,8 @@ const crypto = require('crypto');
 // v5: 카드 소제목(####)을 이름표-내용 칸으로, 번호 목록을 단계로, `> **예외**` 인용을 색 상자로,
 //     `이유:` 줄을 따로 보이고, `| 용어 | 뜻 |` 표의 용어에 마우스를 올리면 뜻을 보인다.
 // v6: fence·표 파서를 준비 검사와 한 벌로(탭 들여쓰기, 4칸 들여쓴 닫는 표시는 닫지 않음, code span 속 `|`).
-const RENDERER_VERSION = 'v6';
+// v7: responsive reading layout.
+const RENDERER_VERSION = 'v7';
 const OUTPUT = 'docs/SPEC.html';
 const REGENERATE = 'node .project-check/render-spec-html.js .';
 const ID = /\b(?:REQ|NFR|TEST)-[A-Z0-9]+-\d{3}\b/g;
@@ -31,9 +32,11 @@ const normalize = text => text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
 // BOM·CRLF를 정규화한 뒤 해시한다. Windows에서 core.autocrlf로 checkout된 SPEC이 같은 해시를
 // 내야 HTML이 낡은 것으로 오판되지 않는다.
 // 요구사항별 변경 이력을 CHANGELOG.md에서 가져오므로 두 원본을 함께 해시한다. CHANGELOG가 없으면
-// SPEC만 해시한다.
-function sourceHash(text, changelog = '') {
+// SPEC만 해시한다. 인덱스가 가리키는 기능 사양 문서(features)도 페이지에 들어가므로 인덱스 순서대로
+// 함께 해시한다. 기능 문서가 없으면 해시는 예전과 같다 — 단일 파일 SPEC의 HTML이 낡은 것으로 보이지 않는다.
+function sourceHash(text, changelog = '', features = []) {
   const h = crypto.createHash('sha256').update(normalize(text), 'utf8');
+  for (const f of features) h.update(`\n\u0000DOC ${f.relative}\u0000\n` + normalize(f.text), 'utf8');
   if (changelog) h.update('\n\u0000CHANGELOG\u0000\n' + normalize(changelog), 'utf8');
   return h.digest('hex');
 }
@@ -41,13 +44,20 @@ function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 
 // ---- inline -------------------------------------------------------------------------------
 
-function safeHref(href) {
+function safeHref(href, ctx = {}) {
   if (href.startsWith('#')) return href;
   if (/^(?:https?:|mailto:)/i.test(href)) return href;
   // 다른 scheme(javascript: 등), protocol-relative, 절대 경로(개인 홈 경로)는 링크로 만들지 않는다.
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('/') || href.startsWith('\\')) return null;
+  // 기능 사양 문서(specs/…) 안의 링크는 그 문서 위치 기준이다. 프로젝트 루트 기준으로 바꾼다.
+  const base = ctx.doc ? ctx.doc.base : '';
+  const [file, fragment] = href.split('#');
+  const rooted = base && file ? path.posix.normalize(base + '/' + file.replace(/\\/g, '/')) : file.replace(/^\.\//, '');
+  // 같은 페이지에 들어 있는 기능 사양 문서를 가리키면 페이지 안의 그 문서로 간다.
+  if (ctx.docAnchors && ctx.docAnchors.has(rooted)) return '#' + (fragment || ctx.docAnchors.get(rooted));
   // SPEC.md는 프로젝트 루트, HTML은 docs/에 있으므로 상대 경로를 한 단계 올린다.
-  return '../' + href.replace(/^\.\//, '');
+  if (!base) return '../' + href.replace(/^\.\//, '');
+  return '../' + rooted + (fragment !== undefined ? '#' + fragment : '');
 }
 
 // inline code를 먼저 자리표시자로 바꾼 뒤 문장 전체를 한 번에 처리한다. 조각별로 처리하면
@@ -72,7 +82,7 @@ function prose(raw, ctx, opts) {
     out += format(esc(text.slice(last, m.index)), ctx, opts);
     const restore = t => t.replace(/\uE000(\d+)\uE001/g, (_, i) => kept[i]);
     const label = format(esc(m[2]), ctx, { ...opts, noIds: true });
-    const href = safeHref(restore(m[3]));
+    const href = safeHref(restore(m[3]), ctx);
     // 이미지는 프로젝트 안의 파일만 끼워 넣는다. 원격 이미지는 열 때 외부 요청이 생기므로 링크로 남긴다.
     if (m[1] && href !== null && !/^(?:https?:|mailto:|#)/i.test(href)) out += `<img src="${esc(href)}" alt="${esc(restore(m[2]))}" loading="lazy">`;
     else out += href === null ? label : `<a href="${esc(href)}">${label}</a>`;
@@ -170,9 +180,10 @@ function renderTable(rows, ctx) {
     const a = align[i] ? ` style="text-align:${align[i]}"` : '';
     const word = text.toLowerCase();
     const body = BADGES.has(word) ? `<span class="badge st-${word}">${esc(word)}</span>` : inline(text, ctx);
-    return `<${tag}${a}>${body}</${tag}>`;
+    const label = tag === 'td' && header.length >= 4 ? ` data-label="${esc(header[i])}"` : '';
+    return `<${tag}${a}${label}>${body}</${tag}>`;
   };
-  const out = ['<div class="table-wrap"><table>', '<thead><tr>' + header.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>', '<tbody>'];
+  const out = [`<div class="table-wrap"><table${header.length >= 4 ? ' class="responsive"' : ''}>`, '<thead><tr>' + header.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>', '<tbody>'];
   for (const row of rows.slice(2)) {
     const values = cells(row);
     while (values.length < header.length) values.push('');
@@ -266,6 +277,14 @@ function renderBlocks(lines, ctx, opts = {}) {
       const text = m[2];
       i++;
       if (level === 1 && opts.top && !ctx.titleSeen) { ctx.titleSeen = true; ctx.title = text; continue; }
+      // 기능 사양 문서의 제목은 그 문서가 시작하는 자리다. 목차와 인덱스 링크가 여기로 온다.
+      if (level === 1 && opts.top && ctx.doc && !ctx.doc.titleSeen) {
+        ctx.doc.titleSeen = true;
+        closeTo(1);
+        ctx.toc.push(`<li class="toc-2"><a href="#${ctx.doc.anchor}">${inline(text, ctx, { noIds: true })}</a></li>`);
+        out.push(`<section class="chapter" id="${ctx.doc.anchor}">`, `<h2>${inline(text, ctx, { noIds: true })}</h2>`, `<p><code>${esc(ctx.doc.relative)}</code></p>`, '</section>');
+        continue;
+      }
       const idm = text.match(/^((?:REQ|NFR|TEST)-[A-Z0-9]+-\d{3})\b[.,:;]?\s*(.*)$/);
       const chapter = level === 2 && text.match(/^(\d+)\.\s/);
       if (opts.top) closeTo(level);
@@ -285,7 +304,7 @@ function renderBlocks(lines, ctx, opts = {}) {
         ctx.stack.push({ level, card: ctx.card, close: '</div></section>' });
         out.push(`<section class="field"><h${level}>${inline(text, ctx, { noIds: true })}</h${level}><div class="field-body">`);
       } else if (level === 2 && opts.top) {
-        const sid = chapter ? 'sec-' + chapter[1] : 'part-' + (++ctx.parts);
+        const sid = (ctx.doc ? ctx.doc.anchor + '-' : '') + (chapter ? 'sec-' + chapter[1] : 'part-' + (++ctx.parts));
         ctx.toc.push(`<li class="toc-2"><a href="#${sid}">${inline(text, ctx, { noIds: true })}</a></li>`);
         ctx.stack.push({ level, card: null });
         ctx.card = null;
@@ -626,7 +645,7 @@ function featureIndex(ctx) {
   }
   if (!byCat.size) return '';
   const out = ['<section class="chapter" id="feature-index">', '<h2>기능 목록</h2>',
-    '<div class="table-wrap"><table class="index">', '<thead><tr><th>ID</th><th>이름</th><th>상태</th><th>구현</th><th>테스트</th></tr></thead>', '<tbody>'];
+    '<div class="table-wrap"><table class="index responsive">', '<thead><tr><th>ID</th><th>이름</th><th>상태</th><th>구현</th><th>테스트</th></tr></thead>', '<tbody>'];
   for (const [key, rows] of byCat) {
     const cat = key.replace(/^NFR /, '');
     const name = ctx.groups.get(cat);
@@ -634,7 +653,7 @@ function featureIndex(ctx) {
     for (const [id, def] of rows) {
       const t = ctx.trace.get(id) || {};
       const st = STATUSES.includes(t.status) ? `<span class="badge st-${t.status}">${t.status}</span>` : '';
-      out.push(`<tr><td><a class="idref" href="#${id}">${id}</a></td><td>${def.title ? inline(def.title, ctx, { noIds: true }) : '<span class="untitled">이름 없음</span>'}</td><td>${st}</td><td>${t.impl ? inline(t.impl, ctx, { noIds: true }) : ''}</td><td>${t.test ? inline(t.test, ctx, { noRefs: true }) : ''}</td></tr>`);
+      out.push(`<tr><td data-label="ID"><a class="idref" href="#${id}">${id}</a></td><td data-label="이름">${def.title ? inline(def.title, ctx, { noIds: true }) : '<span class="untitled">이름 없음</span>'}</td><td data-label="상태">${st}</td><td data-label="구현">${t.impl ? inline(t.impl, ctx, { noIds: true }) : ''}</td><td data-label="테스트">${t.test ? inline(t.test, ctx, { noRefs: true }) : ''}</td></tr>`);
     }
   }
   out.push('</tbody>', '</table></div>');
@@ -642,15 +661,37 @@ function featureIndex(ctx) {
   return out.join('\n');
 }
 
+// 기능 사양 문서의 페이지 안 위치 이름. `specs/export/csv.md` → `doc-export-csv`.
+function docAnchor(relative) {
+  return 'doc-' + relative.replace(/^specs\//, '').replace(/\.md$/i, '').replace(/[^A-Za-z0-9_-]+/g, '-');
+}
+const toLines = markdown => normalize(markdown).replace(/<!--[\s\S]*?(?:-->|$)/g, '').replace(/\t/g, '    ').split('\n');
+
 function render(markdown, options = {}) {
-  const text = normalize(markdown).replace(/<!--[\s\S]*?(?:-->|$)/g, '');
-  const lines = text.replace(/\t/g, '    ').split('\n');
-  const { trace, groups } = scanTables(lines);
-  const ctx = { ids: definedIds(lines), stack: [], toc: [], opened: new Set(), statusCounts: {}, meta: null, title: null, titleSeen: false, parts: 0,
+  const lines = toLines(markdown);
+  // 인덱스가 가리키는 기능 사양 문서는 SPEC.md 뒤에 인덱스 순서대로 한 페이지에 잇는다. 정의·추적성·용어는
+  // 모든 문서를 먼저 읽고 모은다 — 기능 문서의 추적성 표가 SPEC.md의 NFR을 가리킬 수 있다.
+  const features = (options.features || []).map(f => ({ relative: f.relative, lines: toLines(f.text), anchor: docAnchor(f.relative), base: path.posix.dirname(f.relative) }));
+  const all = [lines, ...features.map(f => f.lines)];
+  const ids = new Map();
+  for (const l of all) for (const [id, def] of definedIds(l)) if (!ids.has(id)) ids.set(id, def);
+  const trace = new Map(), groups = new Map();
+  for (const l of all) {
+    const t = scanTables(l);
+    for (const [k, v] of t.trace) if (!trace.has(k)) trace.set(k, v);
+    for (const [k, v] of t.groups) if (!groups.has(k)) groups.set(k, v);
+  }
+  const ctx = { ids, stack: [], toc: [], opened: new Set(), statusCounts: {}, meta: null, title: null, titleSeen: false, parts: 0,
     card: null, refs: {}, trace, groups, history: changelogHistory(options.changelog || ''), hasChangelog: Boolean(options.changelog), flows: 0,
-    terms: glossary(lines), inGlossary: false };
+    terms: glossary(all.flatMap(l => [...l, ''])), inGlossary: false, doc: null, docAnchors: new Map(features.map(f => [f.relative, f.anchor])) };
   ctx.chaptersSeen = () => ctx.toc.some(t => t.startsWith('<li class="toc-2"'));
-  const rendered = renderBlocks(lines, ctx, { top: true }).join('\n');
+  let rendered = renderBlocks(lines, ctx, { top: true }).join('\n');
+  for (const f of features) {
+    ctx.doc = { relative: f.relative, anchor: f.anchor, base: f.base, titleSeen: false };
+    ctx.card = null;
+    rendered += '\n' + renderBlocks(f.lines, ctx, { top: true }).join('\n');
+  }
+  ctx.doc = null;
   // 카드 머리는 본문 전체를 읽은 뒤에야 역참조를 알 수 있으므로 자리표시자를 마지막에 채운다.
   ctx.card = null;
   const body = rendered.replace(/\uE010([A-Z0-9-]+)\uE011\n?/g, (_, id) => { const m = cardMeta(id, ctx); return m ? m + '\n' : ''; });
@@ -674,7 +715,7 @@ function render(markdown, options = {}) {
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta name="generator" content="botyard render-spec-html ${RENDERER_VERSION}">`,
     `<meta name="spec-html-renderer" content="${RENDERER_VERSION}">`,
-    `<meta name="spec-source-sha256" content="${sourceHash(markdown, options.changelog || '')}">`,
+    `<meta name="spec-source-sha256" content="${sourceHash(markdown, options.changelog || '', options.features || [])}">`,
     `<title>${esc(title)}</title>`,
     `<style>${CSS}</style>`,
     '</head>',
@@ -713,7 +754,125 @@ function readChangelog(root) {
   return st && st.isFile() ? fs.readFileSync(file, 'utf8') : '';
 }
 
-function lstat(p) { try { return fs.lstatSync(p); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } }
+function lstat(p) { try { return fs.lstatSync(p); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null; throw e; } }
+
+// ---- specification set ---------------------------------------------------------------------
+//
+// 사양은 SPEC.md 한 파일이거나, SPEC.md(공통 사양 + 인덱스)와 인덱스가 가리키는 specs/<기능>.md 묶음이다.
+// 두 층을 잇는 것은 SPEC.md의 인덱스 구역 하나뿐이다:
+//   <!-- spec-index: v1 --> … <!-- spec-index: end -->
+// 절 전체가 아니라 구역인 이유: 단일 파일 SPEC.md에 인덱스를 덧붙일 때 5절에 이미 있던 요구사항 산문의
+// `.md` 경로가 기능 문서 링크로 읽히면 안 된다. 구역이 없으면 SPEC.md 한 파일이 사양의 전부다.
+// 이 해석은 여기 한 곳에만 있다. 준비 검사(project-readiness.js)와 spec-lint.js가 같은 함수를 쓴다.
+const SPECS_DIR = 'specs';
+const INDEX_START = /<!--\s*spec-index:\s*(?!end\b)(\S+)\s*-->/;
+const INDEX_END = /<!--\s*spec-index:\s*end\s*-->/;
+const DOC_LIMIT = 4 * 1024 * 1024;
+
+// fenced 블록 밖의 인덱스 구역. 표시 자체가 주석이므로 주석은 지우지 않고 찾는다. 인용한 예시(fenced)는
+// 구역을 열지 못한다. 없으면 null, 열고 닫지 않았으면 body: null.
+function indexRegion(markdown) {
+  const lines = normalize(markdown).split('\n');
+  const fenced = fencedMask(lines);
+  // fence 안 줄은 같은 길이의 공백으로 가린다. 위치(start·bodyStart·bodyEnd)는 원문 위치와 같아야 한다 —
+  // add-spec-feature.js가 그 위치에 행을 끼워 넣는다.
+  const visible = lines.map((l, i) => (fenced[i] ? ' '.repeat(l.length) : l)).join('\n');
+  const start = visible.match(INDEX_START);
+  if (!start) return null;
+  const from = start.index + start[0].length;
+  const end = visible.slice(from).match(INDEX_END);
+  if (!end) return { version: start[1], body: null, start: start.index, end: null };
+  return { version: start[1], body: visible.slice(from, from + end.index).replace(/<!--[\s\S]*?(?:-->|$)/g, ''), start: start.index, bodyStart: from, bodyEnd: from + end.index };
+}
+
+// 인덱스 구역이 가리키는 문서. Markdown 링크가 기본형이고(읽는 사람이 누를 수 있다) backtick 경로도 같은 뜻으로
+// 받는다. 자리표시자(`specs/<기능>.md`)는 링크가 아니라 설명이다. 한 행이 같은 문서를 링크와 경로로 함께 적은
+// 것은 한 번이고, 같은 형식으로 두 번 적은 것만 중복이다.
+function indexTargets(body) {
+  const found = [], seen = new Set();
+  const collect = (token, form) => {
+    const value = (token || '').trim().replace(/\\/g, '/');
+    if (!value || !/\.md$/i.test(value) || /[<>{}*\s]/.test(value)) return;
+    const key = form + ' ' + value;
+    found.push({ target: value, form, repeated: seen.has(key) });
+    seen.add(key);
+  };
+  for (const m of body.matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) collect(m[1].split('#')[0], 'link');
+  for (const m of body.replace(/\[[^\]\n]*\]\([^)\s]+\)/g, '').matchAll(/`([^`\n]+)`/g)) collect(m[1], 'code');
+  return found;
+}
+
+function inside(root, target) {
+  const relative = path.relative(root, target);
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+}
+
+// specs/ 아래 실제로 있는 사양 문서. README.md는 폴더 설명이라 사양이 아니다. symlink는 따라가지 않고 알린다.
+function featureFiles(root) {
+  const found = [];
+  const walk = (dir, depth) => {
+    if (depth > 4) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return; throw e; }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      const relative = path.relative(root, full).replace(/\\/g, '/');
+      if (entry.isSymbolicLink()) { if (/\.md$/i.test(entry.name)) found.push({ relative, symlink: true }); continue; }
+      if (entry.isDirectory()) walk(full, depth + 1);
+      else if (entry.isFile() && /\.md$/i.test(entry.name) && entry.name.toLowerCase() !== 'readme.md') found.push({ relative, symlink: false });
+    }
+  };
+  const top = lstat(path.join(root, SPECS_DIR));
+  if (top && top.isDirectory() && !top.isSymbolicLink()) walk(path.join(root, SPECS_DIR), 0);
+  return found;
+}
+
+// 사양 묶음을 푼다. 읽을 기능 문서(인덱스 순서)와 끊긴 연결을 돌려준다. 심각도는 level로 주고, 알리는 방식은
+// 호출자가 정한다(준비 검사는 오류, spec-lint는 경고). 인덱스 링크가 두 층의 유일한 연결이므로, 없는 대상과
+// 인덱스에 없는 문서는 둘 다 실패다 — 앞은 요구사항에 닿을 수 없고, 뒤는 아무도 읽지 않는다.
+function specSet(projectRoot, specText) {
+  const root = path.resolve(projectRoot);
+  const problems = [], documents = [];
+  const problem = (code, message, level = 'error') => problems.push({ code, message, level });
+  if (specText === undefined) {
+    const s = lstat(path.join(root, 'SPEC.md'));
+    specText = s && s.isFile() ? fs.readFileSync(path.join(root, 'SPEC.md'), 'utf8') : '';
+  }
+  const region = indexRegion(specText);
+  const present = featureFiles(root);
+  if (!region || region.body === null) {
+    const real = present.filter(f => !f.symlink);
+    if (region) problem('SPEC_INDEX_UNTERMINATED', `SPEC.md: index opened with <!-- spec-index: ${region.version} --> is never closed with <!-- spec-index: end -->`);
+    else if (real.length) problem('SPEC_INDEX_MISSING', `SPEC.md: ${SPECS_DIR}/ holds ${real.length} specification document(s) (first: ${real[0].relative}) but SPEC.md declares no index (<!-- spec-index: v1 --> … <!-- spec-index: end -->); no reader reaches them`);
+    return { region, documents, problems };
+  }
+  const referenced = new Set();
+  for (const entry of indexTargets(region.body)) {
+    const token = entry.target;
+    if (entry.repeated) { problem('SPEC_INDEX_DUPLICATE', `SPEC.md: index lists ${token} more than once; one stale row will not be noticed`, 'warning'); continue; }
+    if (path.isAbsolute(token) || /^[A-Za-z]:/.test(token) || /^[a-z][a-z0-9+.-]*:/i.test(token) || token.startsWith('/')) { problem('SPEC_INDEX_PATH_INVALID', `SPEC.md: feature specification link ${token} must be project-relative`); continue; }
+    const target = path.resolve(root, token);
+    if (!inside(root, target)) { problem('SPEC_INDEX_PATH_INVALID', `SPEC.md: feature specification link ${token} resolves outside project`); continue; }
+    const relative = path.relative(root, target).replace(/\\/g, '/');
+    if (!relative.startsWith(SPECS_DIR + '/')) { problem('SPEC_INDEX_PATH_INVALID', `SPEC.md: feature specification ${token} must live under ${SPECS_DIR}/`); continue; }
+    if (referenced.has(relative)) continue; // 한 행이 링크와 경로로 함께 적은 같은 문서
+    referenced.add(relative);
+    const st = lstat(target);
+    if (!st) { problem('SPEC_INDEX_LINK_MISSING', `SPEC.md: indexed feature specification ${relative} missing`); continue; }
+    if (st.isSymbolicLink()) { problem('SPEC_DOCUMENT_INVALID', `SPEC.md: indexed feature specification ${relative} is a symlink`); continue; }
+    if (!st.isFile()) { problem('SPEC_INDEX_LINK_MISSING', `SPEC.md: indexed feature specification ${relative} is not a file`); continue; }
+    if (!inside(fs.realpathSync(root), fs.realpathSync(target))) { problem('SPEC_INDEX_PATH_INVALID', `SPEC.md: indexed feature specification ${relative} resolves outside project`); continue; }
+    if (st.size > DOC_LIMIT) throw new Error(`${relative}: document exceeds 4 MiB inspection limit`);
+    documents.push({ relative, absolute: target, text: fs.readFileSync(target, 'utf8') });
+  }
+  for (const f of present) {
+    if (referenced.has(f.relative)) continue;
+    if (f.symlink) { problem('SPEC_DOCUMENT_INVALID', `${f.relative}: symlink is not accepted as a specification document`); continue; }
+    problem('SPEC_INDEX_ORPHAN', `${f.relative}: not listed in the SPEC.md index (<!-- spec-index -->); no reader reaches this specification`);
+  }
+  return { region, documents, problems };
+}
 
 function status(projectRoot) {
   const root = path.resolve(projectRoot);
@@ -729,13 +888,17 @@ function status(projectRoot) {
   if (!meta) return { status: 'UNMANAGED', output: OUTPUT };
   const spec = fs.readFileSync(specPath, 'utf8');
   const changelog = readChangelog(root);
-  if (meta.hash !== sourceHash(spec, changelog)) return { status: 'STALE', output: OUTPUT, version: meta.version };
+  const features = specSet(root, spec).documents;
+  if (meta.hash !== sourceHash(spec, changelog, features)) return { status: 'STALE', output: OUTPUT, version: meta.version };
   // 이전 판 렌더러가 만든 HTML은 바이트를 비교할 수 없다(레이아웃이 다르다) — 호출자가 경고로 알린다.
   if (meta.version !== RENDERER_VERSION) return { status: 'CURRENT', output: OUTPUT, version: meta.version };
   // 해시 한 줄만 맞추고 본문을 손으로 고친 파일도 낡은 것이다. 다시 만들어 바이트로 비교한다.
-  const expected = render(spec, { changelog });
+  const expected = render(spec, { changelog, features });
   const cards = (expected.match(/<section class="card /g) || []).length;
-  if (current !== expected) return { status: 'STALE', output: OUTPUT, version: meta.version, reason: 'content', cards };
+  // Line endings are compared normalized: Git for Windows (core.autocrlf=true) checks the committed
+  // LF file out as CRLF, which is not a hand edit.
+  const lf = (t) => t.replace(/\r\n/g, '\n');
+  if (lf(current) !== lf(expected)) return { status: 'STALE', output: OUTPUT, version: meta.version, reason: 'content', cards };
   return { status: 'CURRENT', output: OUTPUT, version: meta.version, cards };
 }
 
@@ -751,7 +914,8 @@ function write(projectRoot) {
   const output = path.join(root, OUTPUT);
   const o = lstat(output);
   if (o && o.isSymbolicLink()) throw new Error('refusing symlink: ' + OUTPUT);
-  const html = render(fs.readFileSync(specPath, 'utf8'), { changelog: readChangelog(root) });
+  const spec = fs.readFileSync(specPath, 'utf8');
+  const html = render(spec, { changelog: readChangelog(root), features: specSet(root, spec).documents });
   if (o) {
     const current = fs.readFileSync(output, 'utf8');
     if (!readMeta(current)) return { status: 'UNMANAGED', output: OUTPUT };
@@ -792,8 +956,8 @@ const CSS = `
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;word-break:keep-all;overflow-wrap:break-word}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border-radius:4px;padding:.1em .35em}
-pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto}pre code{background:none;padding:0}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border-radius:4px;padding:.1em .35em;overflow-wrap:anywhere}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}pre code{background:none;padding:0}
 .top{background:var(--panel);border-bottom:1px solid var(--line);padding:24px 32px}
 .top h1{margin:0 0 12px;font-size:26px;line-height:1.3}
 .chips,.stats{display:flex;flex-wrap:wrap;gap:8px}.chips{margin-bottom:14px}
@@ -802,7 +966,7 @@ pre{background:var(--code);border:1px solid var(--line);border-radius:8px;paddin
 .stat{border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:96px;background:var(--bg)}
 .stat b{display:block;font-size:22px;line-height:1.2}.stat span{font-size:12px;color:var(--muted)}
 .stat.st-draft b{color:var(--draft)}.stat.st-implemented b{color:var(--implemented)}.stat.st-verified b{color:var(--verified)}.stat.st-deprecated b{color:var(--deprecated)}
-.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;max-width:1280px;margin:0 auto;padding:24px 32px}
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px;max-width:1800px;margin:0 auto;padding:24px 24px}
 .toc{position:sticky;top:16px;align-self:start;max-height:calc(100vh - 32px);overflow:auto;font-size:13px}
 .toc input{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);margin-bottom:10px;font:inherit}
 .toc ul{list-style:none;margin:0;padding:0}.toc li{margin:1px 0}.toc a{display:block;padding:2px 8px;border-radius:6px;color:var(--text)}
@@ -817,6 +981,7 @@ main{min-width:0}
 .card{padding:4px 20px 12px}.card p,.card li{max-width:46em}.card p{margin:.4em 0 .9em;line-height:1.85}
 .field{display:grid;grid-template-columns:7.5em minmax(0,1fr);gap:0 18px;border-top:1px solid var(--line);padding:10px 0 2px}
 .field>h4,.field>h5,.field>h6{margin:.15em 0 0;font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.field-body{min-width:0}
 .field-body>:first-child{margin-top:0}.field-body>:last-child{margin-bottom:.4em}
 .field-body ol{list-style:none;counter-reset:step;padding-left:0}
 .field-body ol>li{counter-increment:step;position:relative;padding-left:2.1em;margin:.45em 0}
@@ -832,13 +997,15 @@ p.why{color:var(--muted);border-left:3px solid var(--line);padding-left:10px}.wh
 .idtag{font:600 13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--req);color:#fff;border-radius:6px;padding:2px 8px}
 .kind-nfr .idtag{background:var(--nfr)}.kind-test .idtag{background:var(--test)}
 .idref{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;white-space:nowrap}
+td .idref,.meta .idref{white-space:normal;overflow-wrap:anywhere}td .badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .idtag,.badge{white-space:nowrap}
-.card-meta{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;margin:2px 0 6px}
+.card-meta{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;justify-items:start;font-size:13px;margin:2px 0 6px}
+.meta{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .meta b{color:var(--muted);font-weight:600;margin-right:4px}
 details.history{font-size:13px;margin:4px 0 8px}details.history summary{cursor:pointer;color:var(--muted)}
 details.history ul{margin:6px 0;padding-left:18px}.hist{color:var(--muted);font-size:12px}
 tr.group th{background:var(--bg);text-align:left;font-size:14px;padding-top:12px}.gcode{font:600 12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:4px}
-table.index td:first-child{white-space:nowrap}table.index td:nth-child(2){min-width:10em}table.index td:nth-child(4){min-width:13em}.untitled{color:var(--muted);font-style:italic}
+table.index th:nth-child(1){width:16%}table.index th:nth-child(2){width:24%}table.index th:nth-child(3){width:12%}table.index th:nth-child(4){width:24%}table.index th:nth-child(5){width:24%}.untitled{color:var(--muted);font-style:italic}
 .toc .toc-id span{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:var(--text)}
 .toc a.active{background:var(--code);color:var(--accent);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}.toc a.in-chapter{color:var(--accent)}
 figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-width:100%;height:auto;margin:0 auto}
@@ -849,16 +1016,17 @@ figure.flow{margin:12px 0;overflow-x:auto}figure.flow svg{display:block;max-widt
 .nohist{color:var(--muted)}
 main img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
 .table-wrap{overflow-x:auto;margin:10px 0}
-table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:14px}th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
 th{background:var(--code);font-weight:600}
 .badge{display:inline-block;border-radius:999px;padding:0 10px;font-size:12px;font-weight:600;color:#fff;background:var(--draft)}
 .st-implemented.badge{background:var(--implemented)}.st-verified.badge{background:var(--verified)}.st-deprecated.badge{background:var(--deprecated)}.st-active.badge{background:var(--active)}
 blockquote{margin:10px 0;padding:4px 16px;border-left:4px solid var(--line);color:var(--muted)}
 li.task{list-style:none;margin-left:-1.2em}
 hr{border:0;border-top:1px solid var(--line);margin:20px 0}
-footer{max-width:1280px;margin:0 auto;padding:8px 32px 40px;color:var(--muted);font-size:13px}
+footer{max-width:1800px;margin:0 auto;padding:8px 24px 40px;color:var(--muted);font-size:13px}
 .hidden{display:none}
 @media (max-width:860px){.field{grid-template-columns:1fr}.layout{grid-template-columns:1fr;padding:16px}.toc{position:static;max-height:260px}.top{padding:18px 16px}.chapter{padding:2px 14px 12px}footer{padding:8px 16px 32px}}
+@media screen and (max-width:600px){table.responsive,table.responsive tbody,table.responsive tr,table.responsive td{display:block;width:100%}table.responsive thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}table.responsive tr{margin-bottom:12px;border:1px solid var(--line);border-radius:6px}table.responsive td{border:0;border-top:1px solid var(--line)}table.responsive td::before{content:attr(data-label);display:block;font-size:12px;font-weight:600;color:var(--muted)}table.responsive tr.group th{display:block;width:100%;border:0}.card{padding:4px 12px 12px}}
 @media print{.toc,footer{display:none}.layout{display:block;padding:0}.chapter{break-inside:auto;border:0}.card{break-inside:avoid}body{background:#fff}}
 `.trim();
 
@@ -894,7 +1062,31 @@ if(r.top<t.top+40||r.bottom>t.bottom-8)toc.scrollTop+=r.top-t.top-toc.clientHeig
 window.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);window.addEventListener('hashchange',update);update();})();
 `.trim();
 
-module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write, activeIndex, plainLanguage, FENCE, closesFence, fencedMask, cells };
+// 한 절 안의 ```flow 블록을 모은다. 절은 `## N.` 제목으로 가르고, 주석과 fenced 블록 속 제목은 절이 아니다.
+// drawable은 렌더러가 실제로 흐름도로 그리는지(parseFlow)다 — 준비 검사가 같은 판정을 쓴다.
+function flowBlocks(markdown, sectionNumber) {
+  const lines = normalize(markdown).replace(/<!--[\s\S]*?(?:-->|$)/g, c => c.replace(/[^\n]/g, ' ')).replace(/\t/g, '    ').split('\n');
+  const blocks = [];
+  let inSection = false, fence = null, body = null, start = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (fence) {
+      if (closesFence(line, fence.mark)) {
+        if (fence.flow) { const flow = parseFlow(body); blocks.push({ line: start, drawable: Boolean(flow), nodes: flow ? flow.nodes.length : 0 }); }
+        fence = null;
+      } else if (body) body.push(line);
+      continue;
+    }
+    const open = line.match(FENCE);
+    if (open) { fence = { mark: open[1], flow: inSection && open[2] === 'flow' }; body = []; start = i + 1; continue; }
+    const heading = line.match(/^ {0,3}##\s+(\d+)\.\s/);
+    if (heading) inSection = Number(heading[1]) === sectionNumber;
+  }
+  return blocks;
+}
+
+module.exports = { RENDERER_VERSION, OUTPUT, REGENERATE, sourceHash, render, readMeta, status, write, activeIndex, plainLanguage, FENCE, closesFence, fencedMask, cells, parseFlow, flowBlocks,
+  SPECS_DIR, INDEX_START, INDEX_END, indexRegion, indexTargets, featureFiles, specSet };
 
 if (require.main === module) {
   try { process.exitCode = main(process.argv.slice(2)); }
