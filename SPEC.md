@@ -658,6 +658,10 @@ REQ-ROUTE-003
 `tests/test_hardening.py`에서 다음 테스트를 실행한다.
 
 - `test_positive_remaining_percent_does_not_interrupt_session`
+- `test_quoted_usage_errors_do_not_interrupt_a_live_pty`
+- `test_tail_truncation_does_not_turn_quoted_text_into_an_error_row`
+- `test_native_usage_error_still_interrupts_a_live_pty`
+- `test_native_error_survives_split_utf8_and_ansi_sequences`
 
 #### Expected Result
 - 한도가 다 찼다는 문구만 넘겨 쓰기 후보가 된다.

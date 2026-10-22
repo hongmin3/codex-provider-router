@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="botyard render-spec-html v7">
 <meta name="spec-html-renderer" content="v7">
-<meta name="spec-source-sha256" content="f296afac2e04776215a0d934be15c332bd38bba385e519e6725b04c2d3126ec7">
+<meta name="spec-source-sha256" content="1cbc136cedc1bbad70a8d2b7059abd0adee2a40794ca3dc6032d07e193ba1b9c">
 <title>Codex Provider Router 사양서</title>
 <style>:root{--bg:#f7f8fa;--panel:#fff;--text:#1d2330;--muted:#5d6678;--line:#e2e6ee;--accent:#2f6fde;--code:#f1f3f7;
 --req:#2f6fde;--nfr:#8a4fd8;--test:#15907a;--draft:#8a93a6;--implemented:#c98a12;--verified:#1f9d55;--deprecated:#c2413a;--active:#2f6fde;
@@ -440,7 +440,13 @@ footer{max-width:1800px;margin:0 auto;padding:8px 24px 40px;color:var(--muted);f
 </section>
 <section class="card kind-req" id="REQ-ROUTE-003">
 <h3><span class="idtag">REQ-ROUTE-003</span> 남은 한도 안내를 소진으로 잘못 읽지 않기</h3>
-<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span><span class="meta nohist"><b>변경 이력</b> CHANGELOG에 이 ID로 기록된 변경 없음</span></div>
+<div class="card-meta"><span class="badge st-verified">verified</span><span class="meta"><b>구현</b> <code>src/codex_router.py</code></span><span class="meta"><b>테스트</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span><span class="meta"><b>참조됨</b> <a class="idref" href="#TEST-ROUTE-002">TEST-ROUTE-002</a></span></div>
+<details class="history"><summary>변경 이력 2</summary>
+<ul>
+<li><span class="hist">[Unreleased] · Fixed</span> <a class="idref" href="#REQ-ROUTE-003">REQ-ROUTE-003</a>: 도구 출력이나 대화에 인용된 한도 오류 때문에 정상 OpenAI 세션이 중단되고 DeepSeek 전환 질문이 뜨던 문제를 고쳤다. Codex 자체 오류 행만 전환 후보로 보고, 들여쓴 출력과 길이 제한으로 잘린 첫 행은 제외한다. 가상 터미널에서 정상 세션 유지와 실제 오류 감지를 검사한다.</li>
+<li><span class="hist">[Unreleased] · Fixed</span> <a class="idref" href="#REQ-ROUTE-003">REQ-ROUTE-003</a>: 오류 표시의 글자나 색상 코드가 나뉘어 전달돼도 합친 뒤 판정한다.</li>
+</ul>
+</details>
 <section class="field"><h4>목적</h4><div class="field-body">
 <p>남은 한도를 알려 주는 안내를 한도가 다 찬 것으로 잘못 읽고 넘겨 쓰지 않게 한다.</p>
 </div></section>
@@ -985,6 +991,10 @@ Codex가 읽는 DeepSeek <span class="term" title="Codex가 어느 provider와 �
 <p><code>tests/test_hardening.py</code>에서 다음 테스트를 실행한다.</p>
 <ul>
 <li><code>test_positive_remaining_percent_does_not_interrupt_session</code></li>
+<li><code>test_quoted_usage_errors_do_not_interrupt_a_live_pty</code></li>
+<li><code>test_tail_truncation_does_not_turn_quoted_text_into_an_error_row</code></li>
+<li><code>test_native_usage_error_still_interrupts_a_live_pty</code></li>
+<li><code>test_native_error_survives_split_utf8_and_ansi_sequences</code></li>
 </ul>
 </div></section>
 <section class="field"><h4>Expected Result</h4><div class="field-body">

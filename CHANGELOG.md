@@ -64,6 +64,8 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 
 ### Fixed
 
+- REQ-ROUTE-003: 도구 출력이나 대화에 인용된 한도 오류 때문에 정상 OpenAI 세션이 중단되고 DeepSeek 전환 질문이 뜨던 문제를 고쳤다. Codex 자체 오류 행만 전환 후보로 보고, 들여쓴 출력과 길이 제한으로 잘린 첫 행은 제외한다. 가상 터미널에서 정상 세션 유지와 실제 오류 감지를 검사한다.
+- REQ-ROUTE-003: 오류 표시의 글자나 색상 코드가 나뉘어 전달돼도 합친 뒤 판정한다.
 - REQ-ROUTE-001: Windows에서 인자에 `--`가 들어 있으면 원본 Codex를 부르기 전에 실행이 멈추던 문제를 고쳤다. 예를 들어 `codex mcp add <이름> -- <명령>`이 실패했다. 이제 `--`를 포함한 모든 인자를 순서 그대로 원본 Codex에 넘긴다.
 - TEST-COST-002·잔액 회귀 테스트 환경 격리. Codex 에이전트 실행 환경이 물려주는
   `CODEX_ROUTER_BYPASS=1` 때문에 `run_codex`를 직접 부르는 두 테스트가 bypass 경로로

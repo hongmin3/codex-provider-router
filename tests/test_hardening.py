@@ -3,6 +3,7 @@ import io
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -125,6 +126,71 @@ class HardeningTests(unittest.TestCase):
         self.assertNotIn("--profile=other", args)
         self.assertNotIn("--model=other", args)
         self.assertEqual(args[-3:], ["--", "--model", "literal prompt"])
+
+    def _pty_output(self, chunks):
+        executable = self.root / "fake-codex"
+        executable.write_text(
+            f"#!{sys.executable}\nimport os, time\n"
+            f"for chunk in {chunks!r}:\n"
+            "    os.write(1, chunk)\n    time.sleep(0.05)\n"
+            "print('SESSION_STILL_RUNNING', flush=True)\n")
+        executable.chmod(0o700)
+        driver = (
+            "import json, os, sys; "
+            f"sys.path.insert(0, {str(pathlib.Path(router.__file__).parent)!r}); "
+            "import codex_router; "
+            "result = codex_router.run_pty([sys.argv[1]], os.environ.copy(), True); "
+            "print('\\nPTY_RESULT=' + json.dumps(result))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", driver, str(executable)],
+            input="", capture_output=True, text=True, timeout=10,
+            start_new_session=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout.rsplit("PTY_RESULT=", 1)[1])
+
+    # Validates: REQ-ROUTE-003. Broad text matching interrupts these healthy children.
+    def test_quoted_usage_errors_do_not_interrupt_a_live_pty(self):
+        for output in (
+            b"tool output: HTTP 429; You've hit your session limit.\n",
+            b"  \xe2\x94\x94 HTTP 429 Too many requests\n",
+            b"Example: You've hit your usage limit.\n",
+            b"Weekly limit: 62% left\n",
+            "  └ ■ You've hit your usage limit.\n".encode(),
+            "    ■ You've hit your usage limit.\n".encode(),
+        ):
+            with self.subTest(output=output):
+                code, detected, tail = self._pty_output([output])
+                self.assertIsNone(detected)
+                self.assertEqual(code, 0)
+                self.assertIn("SESSION_STILL_RUNNING", tail)
+
+    def test_tail_truncation_does_not_turn_quoted_text_into_an_error_row(self):
+        message = "■ You've hit your usage limit."
+        outputs = (
+            ("tool: " + message + "x" * (12000 - len(message))).encode(),
+            b"tool: " + message.encode() + b"x" * (65536 - len(message.encode())),
+        )
+        for output in outputs:
+            with self.subTest(length=len(output)):
+                code, detected, tail = self._pty_output([output])
+                self.assertIsNone(detected)
+                self.assertEqual(code, 0)
+                self.assertIn("SESSION_STILL_RUNNING", tail)
+
+    def test_native_usage_error_still_interrupts_a_live_pty(self):
+        code, detected, tail = self._pty_output([
+            "■ You've hit your usage limit.\n".encode()])
+        self.assertEqual(detected, "usage_limit")
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("SESSION_STILL_RUNNING", tail)
+
+    def test_native_error_survives_split_utf8_and_ansi_sequences(self):
+        code, detected, _ = self._pty_output([
+            b"\x1b[3", b"1m\xe2", b"\x96\xa0 You've hit your ",
+            b"usage limit.\x1b[0m\n"])
+        self.assertEqual(detected, "usage_limit")
+        self.assertNotEqual(code, 0)
 
     def test_positive_remaining_percent_does_not_interrupt_session(self):
         for percent in (10, 20, 30, 50, 60, 70, 80, 90, 100, 1.0):

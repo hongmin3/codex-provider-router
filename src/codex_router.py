@@ -870,6 +870,20 @@ def sync_window_size(source_fd: int, target_fd: int) -> bool:
         return False
 
 
+def runtime_usage_error(output: str) -> str | None:
+    """Only a native Codex error row may interrupt an interactive session.
+
+    Tool output, prompts and assistant text may quote any usage error. Codex
+    renders its own errors with a leading square, while tool rows have their
+    own tree prefix. Unknown screen formats must leave the session running.
+    """
+    for line in output.splitlines():
+        error = re.match(r"^■[ \t]+(.+)", line)
+        if error and USAGE_RE.match(error[1]):
+            return error[1]
+    return None
+
+
 def run_pty(argv: list[str], env: dict[str, str], watch_usage: bool) -> tuple[int, str | None, str]:
     pid, fd = os.forkpty()
     if pid == 0:
@@ -892,6 +906,8 @@ def run_pty(argv: list[str], env: dict[str, str], watch_usage: bool) -> tuple[in
         tty.setraw(stdin_fd)
     detected = None
     tail = ""
+    raw_tail = b""
+    raw_truncated = False
     try:
         while True:
             sources = [fd] + ([stdin_fd] if stdin_fd >= 0 else [])
@@ -904,9 +920,18 @@ def run_pty(argv: list[str], env: dict[str, str], watch_usage: bool) -> tuple[in
                 if not data:
                     break
                 os.write(sys.stdout.fileno(), data)
-                clean = ANSI_RE.sub(b"", data).decode(errors="ignore")
-                tail = (tail + clean)[-12000:]
-                if watch_usage and USAGE_RE.search(tail):
+                # Keep bytes until decoding so UTF-8 and ANSI sequences split
+                # across reads are reconstructed before classifying screen rows.
+                raw_tail += data
+                raw_truncated = raw_truncated or len(raw_tail) > 65536
+                raw_tail = raw_tail[-65536:]
+                screen = ANSI_RE.sub(b"", raw_tail).decode(errors="ignore")
+                tail = screen[-12000:]
+                # A cut buffer starts mid-row. Never treat that fragment as a
+                # native error just because its tool/assistant prefix was lost.
+                complete_rows = screen.partition("\n")[2] if raw_truncated else screen
+                usage_error = runtime_usage_error(complete_rows) if watch_usage else None
+                if usage_error:
                     detected = "usage_limit"
                     os.kill(pid, signal.SIGINT)
                     watch_usage = False

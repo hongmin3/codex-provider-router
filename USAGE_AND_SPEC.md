@@ -255,6 +255,8 @@ OpenAI failure
 
 `usage limit resets available`, `less than 25% left`, `26% left`, `resets in ...`과 같은 정상 잔여량·reset 안내는 fallback 조건에서 제외한다. `hit`, `reached`, `exceeded`, `no usage left`, `0% left`, HTTP 429처럼 실제 실패를 나타내는 문구만 전환 후보로 판단한다.
 
+대화형 실행에서는 Codex가 직접 표시하는 오류 행(`■`로 시작) 안에서만 위 문구를 판정한다. 도구 출력이나 대화에 인용된 오류, 들여쓴 줄, 길이 제한으로 앞이 잘린 줄은 세션 중단 근거로 쓰지 않는다. Codex의 화면 형식이 달라져 오류 행을 확인할 수 없으면 자동 전환 없이 세션을 계속 실행한다.
+
 ## 7. DeepSeek 오류 안내
 
 DeepSeek 세션이 비정상 exit code로 종료되면 Router가 TTY의 최근 오류 문구를 분류하고 한국어로 안내한다.
