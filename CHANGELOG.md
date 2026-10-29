@@ -90,3 +90,5 @@ Semantic Versioning은 강제하지 않는다. 프로젝트에 Versioning 정책
 ### Added
 
 - SPEC.md 도입 — 기존 동작을 Requirement로 문서화 (REQ-*/NFR-*)
+
+- 2026-10-29: 키트 관리 지침을 workflow v11로 갱신하고 SPEC HTML 렌더러를 v8로 맞췄다. 제품 사양은 유지했다.
